@@ -1,0 +1,8 @@
+{
+  "name": "Natura Coco",
+  "description": "Fresh coconuts and natural coconut drinks delivered across Pakistan, featuring city-based delivery and pickup options.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
