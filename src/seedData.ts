@@ -1,4 +1,4 @@
-import type { Product, HeroSlide } from './types';
+import type { Product, HeroSlide, Customer } from './types';
 
 export const INITIAL_HERO_SLIDES: HeroSlide[] = [
   {
@@ -445,3 +445,5 @@ export const INITIAL_PRODUCTS: Product[] = [
     ],
   }
 ];
+
+export const INITIAL_CUSTOMERS: Customer[] = [];

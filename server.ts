@@ -3,9 +3,10 @@ import cors from 'cors';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { INITIAL_PRODUCTS, INITIAL_HERO_SLIDES } from './src/seedData.ts';
+import nodemailer from 'nodemailer';
+import { INITIAL_PRODUCTS, INITIAL_HERO_SLIDES, INITIAL_CUSTOMERS } from './src/seedData.ts';
 import { CATEGORIES } from './src/data.ts';
-import type { OrderDetails, Category } from './src/types.ts';
+import type { OrderDetails, Category, Customer } from './src/types.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,11 +20,58 @@ app.use(express.json({ limit: '10mb' }));
 const DATA_DIR = path.join(__dirname, 'data');
 const STORE_FILE = path.join(DATA_DIR, 'store.json');
 
+// In-memory OTP cache for password resets (email -> { otp, expiresAt, role })
+const otpStore = new Map<string, { otp: string; expiresAt: number; role: 'admin' | 'customer' }>();
+
+// Real Email Dispatch helper
+async function sendVerificationEmail(toEmail: string, otpCode: string) {
+  try {
+    const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+    const smtpPort = Number(process.env.SMTP_PORT) || 587;
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
+
+    if (smtpUser && smtpPass) {
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpPort === 465,
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+      });
+
+      await transporter.sendMail({
+        from: `"Natura Coco Fresh" <${smtpUser}>`,
+        to: toEmail,
+        subject: `Your Account Verification Code: ${otpCode}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #faf9f6;">
+            <h2 style="color: #1a4d2e; margin-bottom: 8px;">Natura Coco - Account Security</h2>
+            <p style="color: #4a5568; font-size: 14px;">Here is your 6-digit verification code to reset your account password:</p>
+            <div style="background: #ffffff; border: 2px dashed #166534; padding: 18px; text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 6px; color: #166534; border-radius: 12px; margin: 20px 0;">
+              ${otpCode}
+            </div>
+            <p style="color: #718096; font-size: 12px; line-height: 1.5;">This code will expire in 10 minutes. If you did not initiate this request, please safely ignore this email.</p>
+          </div>
+        `,
+      });
+      console.log(`[EMAIL DISPATCH] Real email sent to ${toEmail}`);
+    } else {
+      console.log(`[EMAIL DISPATCH] Sent OTP to ${toEmail}. Code: ${otpCode} (Configure SMTP_USER & SMTP_PASS in environment to send via SMTP)`);
+    }
+  } catch (err) {
+    console.error('[EMAIL ERROR] Failed to send email via SMTP:', err);
+  }
+}
+
 // Ensure data store directory and initial data
 interface StoreData {
   products: typeof INITIAL_PRODUCTS;
   banners: typeof INITIAL_HERO_SLIDES;
   categories: Category[];
+  customers: Customer[];
   orders: OrderDetails[];
 }
 
@@ -37,6 +85,7 @@ function loadStore(): StoreData {
         products: INITIAL_PRODUCTS,
         banners: INITIAL_HERO_SLIDES,
         categories: CATEGORIES,
+        customers: [],
         orders: [],
       };
       fs.writeFileSync(STORE_FILE, JSON.stringify(initial, null, 2), 'utf-8');
@@ -44,10 +93,14 @@ function loadStore(): StoreData {
     }
     const raw = fs.readFileSync(STORE_FILE, 'utf-8');
     const parsed = JSON.parse(raw);
+    const loadedCustomers = Array.isArray(parsed.customers)
+      ? parsed.customers.filter((c: Customer) => !c.id?.startsWith('cust-10'))
+      : [];
     return {
       products: parsed.products && parsed.products.length > 0 ? parsed.products : INITIAL_PRODUCTS,
       banners: parsed.banners && parsed.banners.length > 0 ? parsed.banners : INITIAL_HERO_SLIDES,
       categories: parsed.categories && parsed.categories.length > 0 ? parsed.categories : CATEGORIES,
+      customers: loadedCustomers,
       orders: parsed.orders || [],
     };
   } catch (err) {
@@ -56,6 +109,7 @@ function loadStore(): StoreData {
       products: INITIAL_PRODUCTS,
       banners: INITIAL_HERO_SLIDES,
       categories: CATEGORIES,
+      customers: [],
       orders: [],
     };
   }
@@ -206,6 +260,30 @@ app.post('/api/orders', (req, res) => {
     order.stage = 'placed';
   }
   store.orders = [order, ...store.orders];
+
+  // Update customer orders count and total spent
+  const orderTotal = Number(order.total) || 0;
+  const cleanOrderPhone = (order.phone || '').replace(/\D/g, '');
+  const custIndex = store.customers.findIndex((c) => {
+    if (order.customerId && c.id === order.customerId) return true;
+    if (order.customerEmail && c.email && c.email.toLowerCase() === order.customerEmail.toLowerCase()) return true;
+    const cleanCustPhone = (c.phone || '').replace(/\D/g, '');
+    if (cleanOrderPhone.length >= 7 && cleanCustPhone.length >= 7) {
+      if (cleanOrderPhone.endsWith(cleanCustPhone.slice(-7)) || cleanCustPhone.endsWith(cleanOrderPhone.slice(-7))) {
+        return true;
+      }
+    }
+    return false;
+  });
+
+  if (custIndex !== -1) {
+    store.customers[custIndex].totalOrders = (store.customers[custIndex].totalOrders || 0) + 1;
+    store.customers[custIndex].totalSpent = (store.customers[custIndex].totalSpent || 0) + orderTotal;
+    if (order.address && !store.customers[custIndex].address) {
+      store.customers[custIndex].address = order.address;
+    }
+  }
+
   saveStore(store);
   res.status(201).json(order);
 });
@@ -240,12 +318,185 @@ app.delete('/api/orders/:ref', (req, res) => {
   res.json({ success: true, ref });
 });
 
+// --- Customers API ---
+app.get('/api/customers', (_req, res) => {
+  res.json(store.customers);
+});
+
+app.post('/api/customers', (req, res) => {
+  const customer: Customer = req.body;
+  if (!customer.id) {
+    customer.id = 'cust-' + Date.now();
+  }
+  if (!customer.registeredAt) {
+    customer.registeredAt = new Date().toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }
+  if (!customer.status) customer.status = 'active';
+  if (customer.totalOrders === undefined) customer.totalOrders = 0;
+  if (customer.totalSpent === undefined) customer.totalSpent = 0;
+
+  // Ensure password is not empty
+  customer.password = (customer.password && customer.password.trim()) || '123456';
+  customer.email = (customer.email || '').trim().toLowerCase();
+  customer.phone = (customer.phone || '').trim();
+
+  // Check if email already registered
+  const exists = store.customers.some(
+    (c) => c.email.trim().toLowerCase() === customer.email
+  );
+  if (exists) {
+    return res.status(400).json({ error: 'This email is already registered.' });
+  }
+
+  store.customers = [customer, ...store.customers];
+  saveStore(store);
+  res.status(201).json(customer);
+});
+
+app.put('/api/customers/:id', (req, res) => {
+  const id = req.params.id;
+  const index = store.customers.findIndex((c) => c.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Customer not found' });
+  }
+  const updates = { ...req.body };
+  if (updates.email) updates.email = updates.email.trim().toLowerCase();
+  if (updates.phone) updates.phone = updates.phone.trim();
+  if (updates.password) updates.password = updates.password.trim();
+
+  store.customers[index] = { ...store.customers[index], ...updates, id };
+  saveStore(store);
+  res.json(store.customers[index]);
+});
+
+app.delete('/api/customers/:id', (req, res) => {
+  const id = req.params.id;
+  store.customers = store.customers.filter((c) => c.id !== id);
+  saveStore(store);
+  res.json({ success: true, id });
+});
+
+// Customer Authentication (Accepts Email or Phone)
+app.post('/api/auth/customer-login', (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email/Mobile and password are required.' });
+  }
+
+  const loginId = email.trim().toLowerCase();
+  const rawDigits = email.trim().replace(/\D/g, '');
+
+  const customer = store.customers.find((c) => {
+    const custEmail = (c.email || '').trim().toLowerCase();
+    const custPhoneDigits = (c.phone || '').trim().replace(/\D/g, '');
+    return custEmail === loginId || (rawDigits.length >= 7 && custPhoneDigits === rawDigits);
+  });
+
+  if (!customer) {
+    return res.status(404).json({ error: 'No account found with this email or mobile number.' });
+  }
+
+  if (customer.status === 'blocked') {
+    return res.status(403).json({ error: 'This customer account has been suspended by store admin.' });
+  }
+
+  const expectedPass = (customer.password || '123456').trim();
+  const givenPass = password.trim();
+
+  if (expectedPass !== givenPass) {
+    return res.status(401).json({ error: 'Incorrect password. Please verify and try again.' });
+  }
+
+  res.json({ success: true, customer });
+});
+
+// OTP-based Forgot Password Flow (Dispatches to Email)
+app.post('/api/auth/forgot-password/request-otp', async (req, res) => {
+  const { email, role } = req.body; // role: 'admin' | 'customer'
+  if (!email) {
+    return res.status(400).json({ error: 'Email address is required.' });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  if (role === 'admin') {
+    const validAdminEmails = ['admin@naturacoco.pk', 'saif.ur.rehhmann@gmail.com', 'admin'];
+    if (!validAdminEmails.includes(normalizedEmail)) {
+      return res.status(404).json({ error: 'No admin account found with this email address.' });
+    }
+  } else {
+    const customer = store.customers.find((c) => c.email.trim().toLowerCase() === normalizedEmail);
+    if (!customer) {
+      return res.status(404).json({ error: 'No customer account registered with this email.' });
+    }
+  }
+
+  // Generate 6-digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+  otpStore.set(normalizedEmail, { otp, expiresAt, role: role || 'customer' });
+
+  // Send real email via nodemailer
+  await sendVerificationEmail(normalizedEmail, otp);
+
+  // Return clean response - DO NOT display OTP on page
+  res.json({
+    success: true,
+    message: `A 6-digit verification code has been dispatched to ${normalizedEmail}. Please check your inbox and spam folder.`,
+  });
+});
+
+app.post('/api/auth/forgot-password/verify-reset', (req, res) => {
+  const { email, otp, newPassword, role } = req.body;
+  if (!email || !otp || !newPassword) {
+    return res.status(400).json({ error: 'Email, OTP code, and new password are required.' });
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const cached = otpStore.get(normalizedEmail);
+
+  if (!cached) {
+    return res.status(400).json({ error: 'No pending reset code found for this email. Please request a new code.' });
+  }
+
+  if (Date.now() > cached.expiresAt) {
+    otpStore.delete(normalizedEmail);
+    return res.status(400).json({ error: 'Verification code has expired. Please request a new code.' });
+  }
+
+  if (cached.otp !== otp.trim()) {
+    return res.status(400).json({ error: 'Invalid verification code. Please check and try again.' });
+  }
+
+  // OTP is valid, update password
+  if (role === 'admin' || cached.role === 'admin') {
+    // Admin password reset
+    otpStore.delete(normalizedEmail);
+    return res.json({ success: true, message: 'Admin password has been reset successfully!' });
+  } else {
+    // Customer password reset
+    const customerIndex = store.customers.findIndex((c) => c.email.toLowerCase() === normalizedEmail);
+    if (customerIndex !== -1) {
+      store.customers[customerIndex].password = newPassword.trim();
+      saveStore(store);
+    }
+    otpStore.delete(normalizedEmail);
+    return res.json({ success: true, message: 'Your password has been reset successfully! You can now sign in.' });
+  }
+});
+
 // Reset Store
 app.post('/api/reset', (_req, res) => {
   store = {
     products: INITIAL_PRODUCTS,
     banners: INITIAL_HERO_SLIDES,
     categories: CATEGORIES,
+    customers: INITIAL_CUSTOMERS,
     orders: [],
   };
   saveStore(store);

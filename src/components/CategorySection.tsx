@@ -8,15 +8,16 @@ interface Props {
   products: Product[];
   onOpenProduct: (p: Product) => void;
   onQuickAdd: (p: Product) => void;
+  onSeeAll?: (category: Category) => void;
 }
 
-export function CategorySection({ category, products, onOpenProduct, onQuickAdd }: Props) {
+export function CategorySection({ category, products, onOpenProduct, onQuickAdd, onSeeAll }: Props) {
   if (products.length === 0) return null;
   const Icon = categoryIcon(category.emoji);
 
   return (
     <section className="mx-auto max-w-6xl px-4 sm:px-6">
-      <div className="reveal mb-4 flex items-end justify-between gap-4">
+      <div className="reveal mb-4 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-palm-100 text-palm-700">
             <Icon size={22} />
@@ -30,8 +31,13 @@ export function CategorySection({ category, products, onOpenProduct, onQuickAdd 
             </p>
           </div>
         </div>
-        <button className="hidden items-center gap-1 text-sm font-semibold text-palm-600 hover:text-palm-800 sm:flex">
-          See All <ChevronRight size={16} />
+        <button
+          type="button"
+          onClick={() => onSeeAll?.(category)}
+          className="flex items-center gap-1.5 rounded-full border border-palm-200 bg-white/90 hover:bg-palm-50 px-3 py-1.5 text-xs sm:text-sm font-bold text-palm-700 hover:text-palm-900 shadow-2xs transition active:scale-95 cursor-pointer"
+        >
+          <span>See All</span>
+          <ChevronRight size={15} />
         </button>
       </div>
 

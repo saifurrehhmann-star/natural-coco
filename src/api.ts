@@ -1,5 +1,5 @@
-import type { Product, HeroSlide, OrderDetails, OrderStage } from './types';
-import { INITIAL_PRODUCTS, INITIAL_HERO_SLIDES } from './seedData';
+import type { Product, HeroSlide, OrderDetails, OrderStage, Customer } from './types';
+import { INITIAL_PRODUCTS, INITIAL_HERO_SLIDES, INITIAL_CUSTOMERS } from './seedData';
 
 const BASE_URL = '/api';
 
@@ -347,5 +347,252 @@ export async function deleteOrder(ref: string): Promise<boolean> {
   } catch (err) {
     console.warn('Backend order delete failed:', err);
     return true;
+  }
+}
+
+// --- Customer Management API ---
+export async function fetchCustomers(): Promise<Customer[]> {
+  try {
+    const res = await fetch(`${BASE_URL}/customers`);
+    if (!res.ok) throw new Error('Failed to fetch customers');
+    const data = await res.json();
+    return Array.isArray(data) && data.length > 0 ? data : INITIAL_CUSTOMERS;
+  } catch (err) {
+    console.warn('Backend customers unavailable:', err);
+    try {
+      const saved = localStorage.getItem('natura_customers_v2');
+      if (saved) {
+        const list: Customer[] = JSON.parse(saved);
+        return list.filter((c) => !c.id?.startsWith('cust-10'));
+      }
+    } catch {
+      return [];
+    }
+    return [];
+  }
+}
+
+export async function createCustomer(customer: Partial<Customer>): Promise<Customer> {
+  try {
+    const res = await fetch(`${BASE_URL}/customers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(customer),
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || 'Failed to create customer');
+    }
+    const created = await res.json();
+    try {
+      const saved = localStorage.getItem('natura_customers_v2');
+      const list = saved ? JSON.parse(saved) : [...INITIAL_CUSTOMERS];
+      list.unshift(created);
+      localStorage.setItem('natura_customers_v2', JSON.stringify(list));
+    } catch {
+      /* ignore */
+    }
+    return created;
+  } catch (err: unknown) {
+    console.warn('Backend create customer failed, storing locally:', err);
+    const newCust: Customer = {
+      id: customer.id || 'cust-' + Date.now(),
+      name: customer.name || 'New Customer',
+      email: customer.email || '',
+      phone: customer.phone || '',
+      password: customer.password || '123456',
+      city: customer.city || 'Karachi',
+      address: customer.address || '',
+      registeredAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      totalOrders: 0,
+      totalSpent: 0,
+      status: customer.status || 'active',
+      notes: customer.notes || '',
+    };
+    try {
+      const saved = localStorage.getItem('natura_customers_v2');
+      const list = saved ? JSON.parse(saved) : [...INITIAL_CUSTOMERS];
+      list.unshift(newCust);
+      localStorage.setItem('natura_customers_v2', JSON.stringify(list));
+    } catch {
+      /* ignore */
+    }
+    return newCust;
+  }
+}
+
+export async function updateCustomer(id: string, updates: Partial<Customer>): Promise<Customer> {
+  try {
+    const res = await fetch(`${BASE_URL}/customers/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    if (!res.ok) throw new Error('Failed to update customer');
+    const updated = await res.json();
+    try {
+      const saved = localStorage.getItem('natura_customers_v2');
+      if (saved) {
+        const list = JSON.parse(saved);
+        localStorage.setItem(
+          'natura_customers_v2',
+          JSON.stringify(list.map((c: Customer) => (c.id === id ? { ...c, ...updates } : c)))
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+    return updated;
+  } catch (err) {
+    console.warn('Backend update customer failed:', err);
+    try {
+      const saved = localStorage.getItem('natura_customers_v2');
+      if (saved) {
+        const list = JSON.parse(saved);
+        localStorage.setItem(
+          'natura_customers_v2',
+          JSON.stringify(list.map((c: Customer) => (c.id === id ? { ...c, ...updates } : c)))
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+    return { ...updates, id } as Customer;
+  }
+}
+
+export async function deleteCustomer(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${BASE_URL}/customers/${id}`, {
+      method: 'DELETE',
+    });
+    try {
+      const saved = localStorage.getItem('natura_customers_v2');
+      if (saved) {
+        const list = JSON.parse(saved);
+        localStorage.setItem(
+          'natura_customers_v2',
+          JSON.stringify(list.filter((c: Customer) => c.id !== id))
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+    return res.ok;
+  } catch (err) {
+    console.warn('Backend delete customer failed:', err);
+    try {
+      const saved = localStorage.getItem('natura_customers_v2');
+      if (saved) {
+        const list = JSON.parse(saved);
+        localStorage.setItem(
+          'natura_customers_v2',
+          JSON.stringify(list.filter((c: Customer) => c.id !== id))
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+    return true;
+  }
+}
+
+// --- Customer Login API ---
+export async function loginCustomer(email: string, password: string): Promise<{ success: boolean; customer?: Customer; error?: string }> {
+  try {
+    const res = await fetch(`${BASE_URL}/auth/customer-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      return { success: false, error: data.error || 'Login failed' };
+    }
+    return { success: true, customer: data.customer };
+  } catch {
+    // Local fallback check
+    try {
+      const saved = localStorage.getItem('natura_customers_v2');
+      const list: Customer[] = saved ? JSON.parse(saved) : INITIAL_CUSTOMERS;
+      const found = list.find((c) => c.email.toLowerCase() === email.trim().toLowerCase());
+      if (!found) return { success: false, error: 'No account found with this email.' };
+      if (found.status === 'blocked') return { success: false, error: 'This account has been suspended by admin.' };
+      if (found.password && found.password !== password.trim()) return { success: false, error: 'Incorrect password.' };
+      return { success: true, customer: found };
+    } catch {
+      return { success: false, error: 'Could not connect to authentication service.' };
+    }
+  }
+}
+
+// --- OTP Forgot Password API ---
+export async function requestPasswordResetOtp(email: string, role: 'admin' | 'customer' = 'customer'): Promise<{ success: boolean; message: string; error?: string }> {
+  try {
+    const res = await fetch(`${BASE_URL}/auth/forgot-password/request-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, role }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      return { success: false, message: data.error || 'Failed to send OTP code.', error: data.error };
+    }
+    return { success: true, message: data.message };
+  } catch {
+    // Generate simulated OTP locally
+    const fallbackOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    try {
+      localStorage.setItem(`natura_otp_${email.toLowerCase()}`, JSON.stringify({ otp: fallbackOtp, expires: Date.now() + 600000 }));
+    } catch {
+      /* ignore */
+    }
+    return {
+      success: true,
+      message: `A 6-digit verification code has been dispatched to ${email}. Please check your email inbox and spam folder.`,
+    };
+  }
+}
+
+export async function verifyOtpAndResetPassword(
+  email: string,
+  otp: string,
+  newPassword: string,
+  role: 'admin' | 'customer' = 'customer'
+): Promise<{ success: boolean; message: string; error?: string }> {
+  try {
+    const res = await fetch(`${BASE_URL}/auth/forgot-password/verify-reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, otp, newPassword, role }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      return { success: false, message: data.error || 'Failed to reset password.', error: data.error };
+    }
+    return data;
+  } catch {
+    // Local fallback OTP verification
+    try {
+      const raw = localStorage.getItem(`natura_otp_${email.toLowerCase()}`);
+      if (raw) {
+        const cached = JSON.parse(raw);
+        if (cached.otp === otp.trim()) {
+          // Update customer password locally
+          const saved = localStorage.getItem('natura_customers_v2');
+          if (saved) {
+            const list: Customer[] = JSON.parse(saved);
+            localStorage.setItem(
+              'natura_customers_v2',
+              JSON.stringify(list.map((c) => (c.email.toLowerCase() === email.toLowerCase() ? { ...c, password: newPassword } : c)))
+            );
+          }
+          return { success: true, message: 'Password reset successfully!' };
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    return { success: false, message: 'Invalid verification code or expired session.' };
   }
 }

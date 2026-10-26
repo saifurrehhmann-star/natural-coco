@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, ArrowLeft, MapPin, Phone, CreditCard, Banknote, Check, Store, Truck } from 'lucide-react';
-import type { CartItem, LocationState, OrderDetails } from '@/types';
+import type { CartItem, LocationState, OrderDetails, Customer } from '@/types';
 import {
   cartTotal,
   getDeliveryFee,
@@ -18,15 +18,25 @@ interface Props {
   onBack: () => void;
   items: CartItem[];
   location: LocationState;
+  customerUser?: Customer | null;
   onPlaceOrder: (order: OrderDetails) => void;
 }
 
-export function Checkout({ open, onClose, onBack, items, location, onPlaceOrder }: Props) {
-  const [address, setAddress] = useState('');
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState(location.phone);
+export function Checkout({ open, onClose, onBack, items, location, customerUser, onPlaceOrder }: Props) {
+  const [address, setAddress] = useState(customerUser?.address || '');
+  const [name, setName] = useState(customerUser?.name || '');
+  const [phone, setPhone] = useState(customerUser?.phone || location.phone || '');
   const [payment, setPayment] = useState<'cod' | 'online'>('cod');
   const [error, setError] = useState<string | null>(null);
+
+  // Auto-fill customer details whenever modal opens or customerUser changes
+  useEffect(() => {
+    if (open && customerUser) {
+      if (customerUser.name) setName(customerUser.name);
+      if (customerUser.phone) setPhone(customerUser.phone);
+      if (customerUser.address) setAddress(customerUser.address);
+    }
+  }, [open, customerUser]);
 
   if (!open) return null;
 
@@ -47,8 +57,11 @@ export function Checkout({ open, onClose, onBack, items, location, onPlaceOrder 
       mode: location.mode,
       cityId: location.cityId,
       pickup: activePickup(location),
-      address: isPickup ? activePickup(location)?.address ?? '' : address,
-      phone,
+      address: isPickup ? activePickup(location)?.address ?? '' : address.trim(),
+      phone: phone.trim(),
+      customerName: name.trim() || customerUser?.name,
+      customerEmail: customerUser?.email || '',
+      customerId: customerUser?.id,
       items,
       itemsTotal: subtotal,
       tax,
@@ -102,6 +115,27 @@ export function Checkout({ open, onClose, onBack, items, location, onPlaceOrder 
               </span>
             )}
           </div>
+
+          {customerUser && (
+            <div className="mb-4 flex items-center justify-between rounded-2xl bg-emerald-50 border border-emerald-200/90 p-3 text-xs text-emerald-900 shadow-soft animate-fadeIn">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-emerald-600 text-white text-xs font-black shadow-xs">
+                  {customerUser.name.charAt(0).toUpperCase()}
+                </span>
+                <div>
+                  <p className="font-extrabold text-emerald-900 leading-tight">
+                    Welcome, {customerUser.name}
+                  </p>
+                  <p className="text-[11px] text-emerald-700">
+                    Your details have been automatically filled from your profile.
+                  </p>
+                </div>
+              </div>
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-200/80 px-2.5 py-1 text-[10px] font-black text-emerald-900 uppercase tracking-wider">
+                <Check size={11} className="stroke-[3]" /> Auto-Filled
+              </span>
+            </div>
+          )}
 
           <h3 className="text-sm font-bold uppercase tracking-wider text-palm-500">
             {isPickup ? 'Contact Details' : 'Delivery Details'}

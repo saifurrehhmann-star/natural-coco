@@ -135,6 +135,9 @@ export interface OrderDetails {
   pickup: PickupLocation | null;
   address: string;
   phone: string;
+  customerName?: string;
+  customerEmail?: string;
+  customerId?: string;
   items: CartItem[];
   itemsTotal: number;
   tax: number;
@@ -149,3 +152,18 @@ export interface OrderDetails {
 }
 
 export type OrderStage = 'placed' | 'prep' | 'transit' | 'delivered';
+
+export interface Customer {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  password?: string;
+  city?: string;
+  address?: string;
+  registeredAt: string;
+  totalOrders?: number;
+  totalSpent?: number;
+  status: 'active' | 'blocked';
+  notes?: string;
+}

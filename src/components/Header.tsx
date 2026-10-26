@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Menu, X, ShoppingCart, MapPin, ChevronDown, Leaf, ShieldCheck, LogIn, LogOut } from 'lucide-react';
 import { NAV_LINKS } from '@/data';
-import type { LocationState } from '@/types';
+import type { Customer, LocationState } from '@/types';
 import { activeCityName, getEta } from '@/state';
 import { cn } from '@/utils/cn';
 
@@ -9,22 +9,26 @@ interface Props {
   location: LocationState;
   cartCount: number;
   isAdminLoggedIn?: boolean;
+  customerUser?: Customer | null;
   onOpenLocation: () => void;
   onOpenCart: () => void;
   onOpenAdmin: () => void;
   onOpenAuth: () => void;
   onLogoutAdmin?: () => void;
+  onLogoutCustomer?: () => void;
 }
 
 export function Header({
   location,
   cartCount,
   isAdminLoggedIn = false,
+  customerUser = null,
   onOpenLocation,
   onOpenCart,
   onOpenAdmin,
   onOpenAuth,
   onLogoutAdmin,
+  onLogoutCustomer,
 }: Props) {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -88,7 +92,7 @@ export function Header({
             <ChevronDown size={14} className="text-palm-400 transition group-hover:translate-y-0.5" />
           </button>
 
-          {/* Authentication / Admin Button */}
+          {/* Authentication / Admin / Customer Buttons */}
           {isAdminLoggedIn ? (
             <button
               onClick={onOpenAdmin}
@@ -97,6 +101,20 @@ export function Header({
             >
               <ShieldCheck size={15} className="text-palm-700" />
               <span className="hidden sm:inline">Admin Dashboard</span>
+              <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            </button>
+          ) : customerUser ? (
+            <button
+              onClick={onOpenAuth}
+              className="flex items-center gap-1.5 rounded-full border border-palm-200 bg-white/95 px-3 py-1.5 text-xs font-bold text-palm-900 shadow-soft transition hover:border-palm-300 hover:bg-palm-50 active:scale-95"
+              title={`Logged in as ${customerUser.name} (${customerUser.email || customerUser.phone})`}
+            >
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-coral-500 text-[11px] text-white font-black shadow-xs">
+                {customerUser.name.charAt(0).toUpperCase()}
+              </span>
+              <span className="max-w-[5.5rem] sm:max-w-[7.5rem] truncate font-extrabold text-palm-900">
+                {customerUser.name.split(' ')[0]}
+              </span>
               <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
             </button>
           ) : (
@@ -172,6 +190,36 @@ export function Header({
                     className="flex items-center justify-between rounded-xl bg-coral-50 px-3 py-2.5 text-xs font-bold text-coral-700 hover:bg-coral-100"
                   >
                     <span>Sign Out of Admin</span>
+                    <LogOut size={16} />
+                  </button>
+                )}
+              </div>
+            ) : customerUser ? (
+              <div className="flex flex-col gap-1.5">
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onOpenAuth();
+                  }}
+                  className="flex items-center justify-between rounded-xl bg-palm-100 px-3 py-3 text-sm font-bold text-palm-900 shadow-soft"
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-coral-500 text-xs text-white font-extrabold">
+                      {customerUser.name.charAt(0).toUpperCase()}
+                    </span>
+                    <span>{customerUser.name} (Account)</span>
+                  </span>
+                  <span className="text-xs text-palm-500">View</span>
+                </button>
+                {onLogoutCustomer && (
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onLogoutCustomer();
+                    }}
+                    className="flex items-center justify-between rounded-xl bg-coral-50 px-3 py-2.5 text-xs font-bold text-coral-700 hover:bg-coral-100"
+                  >
+                    <span>Sign Out</span>
                     <LogOut size={16} />
                   </button>
                 )}

@@ -157,8 +157,10 @@ export function OrderReceiptModal({ order, open, onClose }: Props) {
 
             <div class="meta-grid">
               <div class="meta-item">
-                <strong>Customer Mobile:</strong>
-                ${order.phone}
+                <strong>Customer Details:</strong>
+                ${order.customerName ? `<div><strong>${order.customerName}</strong></div>` : ''}
+                <div>${order.phone}</div>
+                ${order.customerEmail ? `<div style="font-size: 10px; color: #64748b;">${order.customerEmail}</div>` : ''}
               </div>
               <div class="meta-item">
                 <strong>Order Date & Time:</strong>
@@ -315,8 +317,14 @@ export function OrderReceiptModal({ order, open, onClose }: Props) {
             {/* Customer & Fulfillment Meta */}
             <div className="grid grid-cols-2 gap-3 text-xs bg-cream-50 p-4 rounded-xl border border-palm-100">
               <div>
-                <span className="text-[10px] font-bold text-palm-400 uppercase tracking-wider block">Customer Mobile</span>
-                <span className="font-extrabold text-palm-900 text-xs">{order.phone}</span>
+                <span className="text-[10px] font-bold text-palm-400 uppercase tracking-wider block">Customer Details</span>
+                {order.customerName && (
+                  <span className="font-extrabold text-palm-900 text-xs block">{order.customerName}</span>
+                )}
+                <span className="font-bold text-palm-800 text-xs block">{order.phone}</span>
+                {order.customerEmail && (
+                  <span className="text-palm-500 text-[10px] block truncate">{order.customerEmail}</span>
+                )}
               </div>
               <div>
                 <span className="text-[10px] font-bold text-palm-400 uppercase tracking-wider block">Order Date & Time</span>

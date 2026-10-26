@@ -27,6 +27,14 @@ import {
   ArrowUp,
   ArrowDown,
   Receipt,
+  Users,
+  UserCheck,
+  UserX,
+  UserPlus,
+  History,
+  Lock,
+  Mail,
+  Phone,
 } from 'lucide-react';
 import type {
   Product,
@@ -36,6 +44,7 @@ import type {
   OrderStage,
   CityVisibility,
   CityId,
+  Customer,
 } from '@/types';
 import { CITIES, PICKUP_LOCATIONS, BRAND } from '@/data';
 import { rs } from '@/utils/format';
@@ -49,12 +58,16 @@ interface Props {
   categories: Category[];
   banners: HeroSlide[];
   orders: OrderDetails[];
+  customers: Customer[];
   onAddProduct: (p: Partial<Product>) => Promise<Product | unknown>;
   onEditProduct: (id: string, updates: Partial<Product>) => Promise<void | unknown>;
   onDeleteProduct: (id: string) => Promise<boolean | unknown>;
   onAddCategory: (c: Category) => Promise<Category | unknown>;
   onEditCategory: (id: string, updates: Partial<Category>) => Promise<void | unknown>;
   onDeleteCategory: (id: string) => Promise<boolean | unknown>;
+  onAddCustomer: (c: Partial<Customer>) => Promise<Customer | unknown>;
+  onEditCustomer: (id: string, updates: Partial<Customer>) => Promise<void | unknown>;
+  onDeleteCustomer: (id: string) => Promise<boolean | unknown>;
   onUpdateBanners: (slides: HeroSlide[]) => Promise<HeroSlide[] | unknown>;
   onUpdateOrderStatus: (ref: string, stage: OrderStage) => Promise<boolean | unknown>;
   onEditOrder: (ref: string, updates: Partial<OrderDetails>) => Promise<void | unknown>;
@@ -63,7 +76,7 @@ interface Props {
   onLogout?: () => void;
 }
 
-type SidebarTab = 'dashboard' | 'products' | 'categories' | 'orders' | 'cities' | 'banners' | 'settings';
+type SidebarTab = 'dashboard' | 'products' | 'categories' | 'orders' | 'customers' | 'cities' | 'banners' | 'settings';
 
 const PRESET_IMAGES = [
   { label: 'Green Tender Coconuts', url: 'https://images.pexels.com/photos/16005627/pexels-photo-16005627.jpeg?auto=compress&cs=tinysrgb&h=650&w=940' },
@@ -82,12 +95,16 @@ export function AdminDashboard({
   categories,
   banners,
   orders,
+  customers = [],
   onAddProduct,
   onEditProduct,
   onDeleteProduct,
   onAddCategory,
   onEditCategory,
   onDeleteCategory,
+  onAddCustomer,
+  onEditCustomer,
+  onDeleteCustomer,
   onUpdateBanners,
   onUpdateOrderStatus,
   onEditOrder,
@@ -101,6 +118,14 @@ export function AdminDashboard({
   const [categorySearch, setCategorySearch] = useState('');
   const [productCityFilter, setProductCityFilter] = useState<'all' | 'nationwide' | 'karachi_only'>('all');
   
+  // Customer state & modals
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [customerStatusFilter, setCustomerStatusFilter] = useState<'all' | 'active' | 'blocked'>('all');
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [isCreatingCustomer, setIsCreatingCustomer] = useState(false);
+  const [deletingCustomer, setDeletingCustomer] = useState<Customer | null>(null);
+  const [viewingCustomerOrders, setViewingCustomerOrders] = useState<Customer | null>(null);
+
   // Product modals
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isCreatingProduct, setIsCreatingProduct] = useState(false);
@@ -198,6 +223,24 @@ export function AdminDashboard({
     const totalRevenue = orders.reduce((sum, o) => sum + (o.total || 0), 0);
     const pendingOrders = orders.filter((o) => !o.stage || o.stage === 'placed' || o.stage === 'prep').length;
 
+    const totalCustomers = (customers || []).length;
+    const activeCustomers = (customers || []).filter((c) => c.status === 'active').length;
+    const blockedCustomers = (customers || []).filter((c) => c.status === 'blocked').length;
+    const customerSpendTotal = (customers || []).reduce((sum, c) => {
+      const cleanCustPhone = (c.phone || '').replace(/\D/g, '');
+      const custOrders = orders.filter((o) => {
+        if (o.customerId && o.customerId === c.id) return true;
+        if (o.customerEmail && c.email && o.customerEmail.toLowerCase() === c.email.toLowerCase()) return true;
+        const cleanOrderPhone = (o.phone || '').replace(/\D/g, '');
+        if (cleanCustPhone.length >= 7 && cleanOrderPhone.length >= 7) {
+          if (cleanOrderPhone.endsWith(cleanCustPhone.slice(-7)) || cleanCustPhone.endsWith(cleanOrderPhone.slice(-7))) return true;
+        }
+        return false;
+      });
+      const orderSpend = custOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+      return sum + Math.max(c.totalSpent || 0, orderSpend);
+    }, 0);
+
     return {
       totalProducts: products.length,
       totalCategories: categories.length,
@@ -209,8 +252,12 @@ export function AdminDashboard({
       pendingOrders,
       totalRevenue,
       activeBanners: banners.length,
+      totalCustomers,
+      activeCustomers,
+      blockedCustomers,
+      customerSpendTotal,
     };
-  }, [products, categories, orders, banners]);
+  }, [products, categories, orders, banners, customers]);
 
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
@@ -237,6 +284,27 @@ export function AdminDashboard({
       c.id.toLowerCase().includes(categorySearch.toLowerCase())
     );
   }, [categories, categorySearch]);
+
+  const filteredCustomers = useMemo(() => {
+    return (customers || []).filter((c) => {
+      const q = customerSearch.trim().toLowerCase();
+      const matchesSearch =
+        !q ||
+        c.name.toLowerCase().includes(q) ||
+        c.email.toLowerCase().includes(q) ||
+        c.phone.toLowerCase().includes(q) ||
+        (c.city && c.city.toLowerCase().includes(q));
+
+      const matchesStatus =
+        customerStatusFilter === 'all'
+          ? true
+          : customerStatusFilter === 'active'
+          ? c.status === 'active'
+          : c.status === 'blocked';
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [customers, customerSearch, customerStatusFilter]);
 
   if (!open) return null;
 
@@ -321,6 +389,17 @@ export function AdminDashboard({
             icon={<ShoppingBag size={18} />}
             label="Customer Orders"
             badge={orders.length > 0 ? orders.length.toString() : undefined}
+          />
+
+          <SidebarItem
+            active={activeTab === 'customers'}
+            onClick={() => {
+              setActiveTab('customers');
+              setMobileSidebarOpen(false);
+            }}
+            icon={<Users size={18} />}
+            label="Customers"
+            badge={(customers || []).length.toString()}
           />
 
           <SidebarItem
@@ -409,6 +488,8 @@ export function AdminDashboard({
                   ? 'Website Settings'
                   : activeTab === 'categories'
                   ? 'Categories Management'
+                  : activeTab === 'customers'
+                  ? 'Customer Accounts & CRM'
                   : activeTab}
               </span>
             </span>
@@ -848,37 +929,45 @@ export function AdminDashboard({
                   {orders.map((o) => (
                     <div
                       key={o.ref}
-                      className="rounded-3xl border border-palm-200/80 bg-white p-5 shadow-card space-y-4 hover:border-palm-300 transition"
+                      className={cn(
+                        "rounded-3xl border p-5 shadow-card space-y-4 transition",
+                        o.stage === 'delivered'
+                          ? 'border-emerald-300 bg-emerald-50/20 hover:border-emerald-400'
+                          : 'border-palm-200/80 bg-white hover:border-palm-300'
+                      )}
                     >
                       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-palm-100 pb-3">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 sm:gap-3">
                           <span className="chip bg-palm-100 font-mono text-xs font-bold text-palm-900">
                             {o.ref}
                           </span>
                           <span className="text-xs text-palm-400 font-medium">{o.placedAt}</span>
-                          <span
-                            className={cn(
-                              'chip text-[10px] font-bold py-0.5 px-2.5',
-                              o.stage === 'delivered'
-                                ? 'bg-palm-100 text-palm-800'
-                                : o.stage === 'transit'
-                                ? 'bg-blue-50 text-blue-700'
+                          {o.stage === 'delivered' ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 py-1 px-3 text-xs font-black shadow-xs">
+                              <CheckCircle2 size={14} className="text-emerald-600" />
+                              <span>Done (Completed)</span>
+                            </span>
+                          ) : (
+                            <span
+                              className={cn(
+                                'chip text-[10px] font-bold py-0.5 px-2.5',
+                                o.stage === 'transit'
+                                  ? 'bg-blue-50 text-blue-700'
+                                  : o.stage === 'prep'
+                                  ? 'bg-amber-50 text-amber-700'
+                                  : 'bg-coral-50 text-coral-700'
+                              )}
+                            >
+                              {o.stage === 'transit'
+                                ? 'In Transit / Ready'
                                 : o.stage === 'prep'
-                                ? 'bg-amber-50 text-amber-700'
-                                : 'bg-coral-50 text-coral-700'
-                            )}
-                          >
-                            {o.stage === 'delivered'
-                              ? 'Delivered / Completed'
-                              : o.stage === 'transit'
-                              ? 'In Transit / Ready'
-                              : o.stage === 'prep'
-                              ? 'In Preparation'
-                              : 'Order Placed'}
-                          </span>
+                                ? 'In Preparation'
+                                : 'Order Placed'}
+                            </span>
+                          )}
                         </div>
 
-                        {/* Order Action Controls: Stage Dropdown + Edit + Slip + Delete */}
+                        {/* Order Action Controls: Stage Dropdown + Quick Done + Edit + Slip + Delete */}
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-bold text-palm-600 hidden sm:inline">Stage:</span>
                           <select
@@ -886,15 +975,48 @@ export function AdminDashboard({
                             onChange={async (e) => {
                               const newStage = e.target.value as OrderStage;
                               await onUpdateOrderStatus(o.ref, newStage);
-                              showToast(`Order ${o.ref} status set to ${newStage} (Live updated)`);
+                              showToast(
+                                newStage === 'delivered'
+                                  ? `Order ${o.ref} marked as Done & Delivered!`
+                                  : `Order ${o.ref} status set to ${newStage} (Live updated)`
+                              );
                             }}
-                            className="rounded-full border border-palm-200 bg-cream-50 px-3.5 py-1 text-xs font-bold text-palm-900 cursor-pointer"
+                            className={cn(
+                              "rounded-full border px-3.5 py-1 text-xs font-bold cursor-pointer transition",
+                              o.stage === 'delivered'
+                                ? 'border-emerald-300 bg-emerald-50 text-emerald-900 font-black'
+                                : 'border-palm-200 bg-cream-50 text-palm-900'
+                            )}
                           >
                             <option value="placed">1. Placed (Order Confirmed)</option>
                             <option value="prep">2. In Preparation (Kitchen)</option>
                             <option value="transit">3. In Transit / Ready for Pickup</option>
-                            <option value="delivered">4. Delivered / Collected</option>
+                            <option value="delivered">4. Delivered / Collected (✅ Done)</option>
                           </select>
+
+                          {/* Quick Done Toggle / Indicator */}
+                          {o.stage === 'delivered' ? (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-full bg-emerald-100 border border-emerald-300 px-2.5 py-1 text-xs font-extrabold text-emerald-800"
+                              title="Order is marked as complete"
+                            >
+                              <Check size={13} className="stroke-[3] text-emerald-600" />
+                              <span>Done</span>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await onUpdateOrderStatus(o.ref, 'delivered');
+                                showToast(`Order ${o.ref} marked as Done & Delivered!`);
+                              }}
+                              className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition cursor-pointer active:scale-95 shadow-xs"
+                              title="Click to instantly complete order (Mark as Done)"
+                            >
+                              <CheckCircle2 size={13} className="text-emerald-600" />
+                              <span className="hidden sm:inline">Mark as</span> Done
+                            </button>
+                          )}
 
                           {/* Print / View Slip Icon Button */}
                           <button
@@ -929,7 +1051,20 @@ export function AdminDashboard({
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                         <div>
                           <span className="font-bold text-palm-500 uppercase tracking-wider block">Customer</span>
-                          <p className="mt-1 font-bold text-palm-900">{o.phone}</p>
+                          {o.customerName && (
+                            <div className="mt-1 flex items-center gap-1.5 font-extrabold text-palm-900">
+                              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-coral-500 text-[10px] text-white font-black">
+                                {o.customerName.charAt(0).toUpperCase()}
+                              </span>
+                              <span>{o.customerName}</span>
+                              {o.customerEmail && (
+                                <span className="text-palm-400 font-normal text-[10px]">({o.customerEmail})</span>
+                              )}
+                            </div>
+                          )}
+                          <p className={cn("text-xs font-bold text-palm-800", o.customerName ? "mt-0.5" : "mt-1")}>
+                            {o.phone}
+                          </p>
                           <p className="mt-0.5 text-palm-600">
                             {o.mode === 'pickup' ? 'Flagship Store Pickup' : `Address: ${o.address || 'Karachi'}`}
                           </p>
@@ -961,6 +1096,293 @@ export function AdminDashboard({
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* TAB: CUSTOMER ACCOUNTS (FULL CRUD & CRM)                  */}
+          {/* ========================================================= */}
+          {activeTab === 'customers' && (
+            <div className="space-y-6 max-w-7xl mx-auto animate-fadeIn">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h1 className="font-display text-3xl font-extrabold tracking-tight text-palm-900">
+                    Customer Accounts ({customers.length})
+                  </h1>
+                  <p className="mt-1 text-xs text-palm-600 font-medium">
+                    Manage customer accounts, track orders and spend, edit contact details, reset passwords, or activate/block access.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsCreatingCustomer(true)}
+                  className="btn-primary py-2.5 px-6 text-xs font-bold shadow-soft self-start sm:self-auto cursor-pointer flex items-center gap-2"
+                >
+                  <UserPlus size={16} /> Add New Customer
+                </button>
+              </div>
+
+              {/* Customer Metric Highlights */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <NaturaMetricCard label="Total Customers" value={stats.totalCustomers.toString()} badge="Registered" />
+                <NaturaMetricCard label="Active Accounts" value={stats.activeCustomers.toString()} badge="Verified" />
+                <NaturaMetricCard label="Blocked / Inactive" value={stats.blockedCustomers.toString()} badge="Access Suspended" />
+                <NaturaMetricCard label="Total Customer Spend" value={rs(stats.customerSpendTotal)} badge="Lifetime GMV" />
+              </div>
+
+              {/* Search and Status Filters */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3.5 rounded-3xl border border-palm-200/80 shadow-soft">
+                <div className="relative flex-1 max-w-md">
+                  <Search size={16} className="absolute left-3.5 top-3 text-palm-400" />
+                  <input
+                    type="text"
+                    placeholder="Search by name, email, phone, or city..."
+                    value={customerSearch}
+                    onChange={(e) => setCustomerSearch(e.target.value)}
+                    className="w-full rounded-2xl border border-palm-200 bg-cream-50/60 py-2.5 pl-9 pr-3 text-xs font-medium text-palm-900 outline-none focus:border-palm-500 focus:bg-white"
+                  />
+                  {customerSearch && (
+                    <button
+                      onClick={() => setCustomerSearch('')}
+                      className="absolute right-3 top-3 text-xs text-palm-400 hover:text-palm-700 cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                  <span className="text-xs font-bold text-palm-600 mr-1">Status:</span>
+                  <button
+                    onClick={() => setCustomerStatusFilter('all')}
+                    className={cn(
+                      'chip transition cursor-pointer',
+                      customerStatusFilter === 'all'
+                        ? 'bg-palm-800 text-cream-50'
+                        : 'bg-palm-50 text-palm-700 hover:bg-palm-100'
+                    )}
+                  >
+                    All ({customers.length})
+                  </button>
+                  <button
+                    onClick={() => setCustomerStatusFilter('active')}
+                    className={cn(
+                      'chip transition cursor-pointer',
+                      customerStatusFilter === 'active'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-palm-50 text-palm-700 hover:bg-palm-100'
+                    )}
+                  >
+                    Active ({stats.activeCustomers})
+                  </button>
+                  <button
+                    onClick={() => setCustomerStatusFilter('blocked')}
+                    className={cn(
+                      'chip transition cursor-pointer',
+                      customerStatusFilter === 'blocked'
+                        ? 'bg-coral-600 text-white'
+                        : 'bg-palm-50 text-palm-700 hover:bg-palm-100'
+                    )}
+                  >
+                    Blocked ({stats.blockedCustomers})
+                  </button>
+                </div>
+              </div>
+
+              {/* Customer List / Table */}
+              {filteredCustomers.length === 0 ? (
+                <div className="rounded-3xl border border-dashed border-palm-200 bg-white p-12 text-center shadow-soft">
+                  <Users size={40} className="mx-auto text-palm-300" />
+                  <h3 className="mt-3 font-display text-base font-extrabold text-palm-900">
+                    No customers found
+                  </h3>
+                  <p className="mt-1 text-xs text-palm-500">
+                    {customerSearch
+                      ? `No customer matched your search query "${customerSearch}".`
+                      : 'No customer profiles in this category.'}
+                  </p>
+                  <button
+                    onClick={() => {
+                      setCustomerSearch('');
+                      setCustomerStatusFilter('all');
+                      setIsCreatingCustomer(true);
+                    }}
+                    className="mt-4 btn-primary py-2 px-5 text-xs font-bold inline-flex items-center gap-2"
+                  >
+                    <UserPlus size={14} /> Add Customer
+                  </button>
+                </div>
+              ) : (
+                <div className="rounded-3xl border border-palm-200/80 bg-white shadow-card overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-palm-200/80 bg-palm-50/50 text-palm-600 uppercase font-bold tracking-wider">
+                          <th className="py-3.5 px-5">Customer</th>
+                          <th className="py-3.5 px-4">Contact</th>
+                          <th className="py-3.5 px-4">City & Address</th>
+                          <th className="py-3.5 px-4">Orders & Spend</th>
+                          <th className="py-3.5 px-4">Status</th>
+                          <th className="py-3.5 px-5 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-palm-100 font-medium text-palm-900">
+                        {filteredCustomers.map((c) => {
+                          const cleanCustPhone = (c.phone || '').replace(/\D/g, '');
+                          const customerOrders = orders.filter((o) => {
+                            if (o.customerId && o.customerId === c.id) return true;
+                            if (o.customerEmail && c.email && o.customerEmail.toLowerCase() === c.email.toLowerCase()) return true;
+                            const cleanOrderPhone = (o.phone || '').replace(/\D/g, '');
+                            if (cleanCustPhone.length >= 7 && cleanOrderPhone.length >= 7) {
+                              if (cleanOrderPhone.endsWith(cleanCustPhone.slice(-7)) || cleanCustPhone.endsWith(cleanOrderPhone.slice(-7))) {
+                                return true;
+                              }
+                            }
+                            return false;
+                          });
+                          const sumOrdersSpend = customerOrders.reduce((sum, o) => sum + (Number(o.total) || 0), 0);
+                          const calculatedOrders = Math.max(c.totalOrders || 0, customerOrders.length);
+                          const calculatedSpend = Math.max(c.totalSpent || 0, sumOrdersSpend);
+
+                          return (
+                            <tr key={c.id} className="hover:bg-palm-50/40 transition">
+                              {/* Customer Identity */}
+                              <td className="py-3.5 px-5">
+                                <div className="flex items-center gap-3">
+                                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-palm-100 text-palm-800 font-display font-extrabold text-sm shadow-soft">
+                                    {c.name.slice(0, 2).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <h4 className="font-display font-extrabold text-sm text-palm-900 leading-tight">
+                                      {c.name}
+                                    </h4>
+                                    <span className="text-[11px] text-palm-400 font-medium">
+                                      Joined {c.registeredAt || 'Recently'}
+                                    </span>
+                                    {c.notes && (
+                                      <p className="text-[10px] text-amber-700 italic max-w-xs truncate">
+                                        Note: {c.notes}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Contact Information */}
+                              <td className="py-3.5 px-4">
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-1.5 text-palm-800 font-bold">
+                                    <Phone size={12} className="text-palm-400" />
+                                    <span>{c.phone}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 text-palm-600 text-[11px]">
+                                    <Mail size={12} className="text-palm-400" />
+                                    <span>{c.email}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 text-palm-600 text-[11px] pt-0.5">
+                                    <Lock size={11} className="text-palm-400" />
+                                    <span>Password: <code className="bg-palm-100 text-palm-800 font-mono font-bold px-1.5 py-0.5 rounded text-[10px] select-all">{c.password || '123456'}</code></span>
+                                  </div>
+                                </div>
+                              </td>
+
+                              {/* Location */}
+                              <td className="py-3.5 px-4">
+                                <div>
+                                  <span className="font-bold text-palm-900 block">{c.city || 'Karachi'}</span>
+                                  <p className="text-[11px] text-palm-500 line-clamp-1 max-w-xs">
+                                    {c.address || 'Standard City Delivery'}
+                                  </p>
+                                </div>
+                              </td>
+
+                              {/* Orders & Total Spend */}
+                              <td className="py-3.5 px-4">
+                                <div>
+                                  <span className="font-bold text-palm-900 block">
+                                    {calculatedOrders} {calculatedOrders === 1 ? 'Order' : 'Orders'}
+                                  </span>
+                                  <span className="font-extrabold text-coral-600 text-xs">
+                                    {rs(calculatedSpend)}
+                                  </span>
+                                </div>
+                              </td>
+
+                              {/* Status with Quick Toggle */}
+                              <td className="py-3.5 px-4">
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const nextStatus = c.status === 'active' ? 'blocked' : 'active';
+                                    await onEditCustomer(c.id, { status: nextStatus });
+                                    showToast(
+                                      `Customer ${c.name} status updated to ${nextStatus.toUpperCase()}`
+                                    );
+                                  }}
+                                  className={cn(
+                                    'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold border transition cursor-pointer active:scale-95',
+                                    c.status === 'active'
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                      : 'bg-coral-50 text-coral-700 border-coral-200 hover:bg-coral-100'
+                                  )}
+                                  title="Click to toggle status"
+                                >
+                                  {c.status === 'active' ? (
+                                    <>
+                                      <UserCheck size={12} />
+                                      <span>Active</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <UserX size={12} />
+                                      <span>Blocked</span>
+                                    </>
+                                  )}
+                                </button>
+                              </td>
+
+                              {/* Action Buttons: Orders History, Edit, Delete */}
+                              <td className="py-3.5 px-5 text-right">
+                                <div className="inline-flex items-center gap-1.5">
+                                  {/* View Customer Orders */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setViewingCustomerOrders(c)}
+                                    className="flex items-center gap-1 rounded-xl bg-palm-50 border border-palm-200 px-2.5 py-1.5 text-xs font-bold text-palm-700 hover:bg-palm-100 transition cursor-pointer"
+                                    title="View Customer Order History"
+                                  >
+                                    <History size={13} />
+                                    <span className="hidden sm:inline">Orders</span>
+                                  </button>
+
+                                  {/* Edit Customer Modal */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingCustomer(c)}
+                                    className="flex h-8 w-8 items-center justify-center rounded-xl border border-palm-200 text-palm-700 hover:bg-palm-100 transition cursor-pointer"
+                                    title="Edit Customer Profile"
+                                  >
+                                    <Edit2 size={13} />
+                                  </button>
+
+                                  {/* Delete Customer Confirmation */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeletingCustomer(c)}
+                                    className="flex h-8 w-8 items-center justify-center rounded-xl border border-coral-200 text-coral-600 hover:bg-coral-50 transition cursor-pointer"
+                                    title="Delete Customer"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
             </div>
@@ -1439,6 +1861,98 @@ export function AdminDashboard({
         open={!!viewingSlipOrder}
         onClose={() => setViewingSlipOrder(null)}
       />
+
+      {/* --- IN-APP CUSTOMER DELETE CONFIRMATION MODAL --- */}
+      {deletingCustomer && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-palm-950/60 backdrop-blur-sm animate-fadeIn">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-lift border border-palm-200 space-y-4">
+            <div className="flex items-center gap-3 text-coral-600">
+              <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-coral-100 text-coral-600">
+                <Trash2 size={20} />
+              </span>
+              <div>
+                <h3 className="font-display text-base font-extrabold text-palm-900">
+                  Delete Customer Account?
+                </h3>
+                <p className="text-xs text-palm-500">{deletingCustomer.name} ({deletingCustomer.email})</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-palm-600 leading-relaxed">
+              Are you sure you want to permanently delete customer account <strong>{deletingCustomer.name}</strong> ({deletingCustomer.phone})? This will revoke their account access.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeletingCustomer(null)}
+                className="btn-ghost py-2.5 px-5 text-xs font-bold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const name = deletingCustomer.name;
+                  await onDeleteCustomer(deletingCustomer.id);
+                  setDeletingCustomer(null);
+                  showToast(`Customer "${name}" removed successfully!`);
+                }}
+                className="rounded-full bg-coral-600 hover:bg-coral-700 text-white px-6 py-2.5 text-xs font-bold shadow-soft transition active:scale-95 cursor-pointer"
+              >
+                Yes, Delete Customer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- EDIT / CREATE CUSTOMER MODAL --- */}
+      {(editingCustomer || isCreatingCustomer) && (
+        <CustomerEditorModal
+          key={editingCustomer ? `customer-edit-${editingCustomer.id}` : 'customer-create-new'}
+          customer={editingCustomer}
+          onClose={() => {
+            setEditingCustomer(null);
+            setIsCreatingCustomer(false);
+          }}
+          onSave={async (savedData) => {
+            if (editingCustomer) {
+              await onEditCustomer(editingCustomer.id, savedData);
+              showToast(`Customer "${savedData.name}" updated successfully!`);
+            } else {
+              await onAddCustomer(savedData);
+              showToast(`New customer "${savedData.name}" created!`);
+            }
+            setEditingCustomer(null);
+            setIsCreatingCustomer(false);
+          }}
+        />
+      )}
+
+      {/* --- CUSTOMER ORDERS PREVIEW MODAL --- */}
+      {viewingCustomerOrders && (
+        <CustomerOrdersModal
+          customer={viewingCustomerOrders}
+          orders={orders.filter((o) => {
+            if (o.customerId && o.customerId === viewingCustomerOrders.id) return true;
+            if (o.customerEmail && viewingCustomerOrders.email && o.customerEmail.toLowerCase() === viewingCustomerOrders.email.toLowerCase()) return true;
+            const cleanCustPhone = (viewingCustomerOrders.phone || '').replace(/\D/g, '');
+            const cleanOrderPhone = (o.phone || '').replace(/\D/g, '');
+            if (cleanCustPhone.length >= 7 && cleanOrderPhone.length >= 7) {
+              if (cleanOrderPhone.endsWith(cleanCustPhone.slice(-7)) || cleanCustPhone.endsWith(cleanOrderPhone.slice(-7))) {
+                return true;
+              }
+            }
+            return false;
+          })}
+          onClose={() => setViewingCustomerOrders(null)}
+          onViewSlip={(o) => {
+            setViewingCustomerOrders(null);
+            setViewingSlipOrder(o);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -2639,3 +3153,407 @@ function OrderEditorModal({
     </div>
   );
 }
+
+// =========================================================================
+// CUSTOMER EDITOR MODAL (ADD & EDIT CUSTOMER PROFILES)
+// =========================================================================
+function CustomerEditorModal({
+  customer,
+  onClose,
+  onSave,
+}: {
+  customer: Customer | null;
+  onClose: () => void;
+  onSave: (data: Partial<Customer>) => Promise<void>;
+}) {
+  const isEditing = !!customer;
+  const [name, setName] = useState(customer?.name || '');
+  const [email, setEmail] = useState(customer?.email || '');
+  const [phone, setPhone] = useState(customer?.phone || '');
+  const [password, setPassword] = useState(customer?.password || (isEditing ? '' : '123456'));
+  const [showPassword, setShowPassword] = useState(false);
+  const [city, setCity] = useState(customer?.city || 'Karachi');
+  const [address, setAddress] = useState(customer?.address || '');
+  const [status, setStatus] = useState<'active' | 'blocked'>(customer?.status || 'active');
+  const [notes, setNotes] = useState(customer?.notes || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    if (!name.trim()) {
+      setError('Please provide customer full name.');
+      return;
+    }
+    if (!email.trim() || !email.includes('@')) {
+      setError('Please provide a valid email address.');
+      return;
+    }
+    if (!phone.trim()) {
+      setError('Please provide a phone / mobile number.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await onSave({
+        name: name.trim(),
+        email: email.trim().toLowerCase(),
+        phone: phone.trim(),
+        password: password.trim() || (isEditing ? (customer?.password || '123456') : '123456'),
+        city: city.trim(),
+        address: address.trim(),
+        status,
+        notes: notes.trim(),
+        registeredAt: customer?.registeredAt || new Date().toISOString().split('T')[0],
+        totalOrders: customer?.totalOrders || 0,
+        totalSpent: customer?.totalSpent || 0,
+      });
+    } catch {
+      setError('An error occurred while saving customer profile. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-palm-950/60 backdrop-blur-sm animate-fadeIn">
+      <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-lift border border-palm-200 space-y-4 max-h-[90vh] overflow-y-auto no-scrollbar">
+        <div className="flex items-center justify-between border-b border-palm-100 pb-3">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-palm-100 text-palm-700">
+              {isEditing ? <Edit2 size={18} /> : <UserPlus size={18} />}
+            </span>
+            <div>
+              <h3 className="font-display text-base font-extrabold text-palm-900">
+                {isEditing ? 'Edit Customer Profile' : 'Add New Customer'}
+              </h3>
+              <p className="text-[11px] text-palm-500">
+                {isEditing
+                  ? `Update info and credentials for ${customer.name}`
+                  : 'Register a new store customer directly from admin portal'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-palm-100 text-palm-700 hover:bg-palm-200 cursor-pointer"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {error && (
+          <div className="rounded-2xl bg-coral-50 border border-coral-200 p-3 text-xs text-coral-700 flex items-center gap-2">
+            <AlertCircle size={16} className="shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+          <div>
+            <label className="font-bold text-palm-700 block mb-1">Full Name *</label>
+            <input
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Bilal Ahmed"
+              className="checkout-input py-2 text-xs font-medium"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="font-bold text-palm-700 block mb-1">Email Address *</label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="e.g. bilal@gmail.com"
+                className="checkout-input py-2 text-xs"
+              />
+            </div>
+            <div>
+              <label className="font-bold text-palm-700 block mb-1">Mobile / WhatsApp *</label>
+              <input
+                type="tel"
+                required
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="e.g. 0300-1234567"
+                className="checkout-input py-2 text-xs font-bold"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="font-bold text-palm-700 block mb-1">
+                Account Password {isEditing && <span className="font-normal text-palm-400">(leave blank to keep)</span>}
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={isEditing ? '••••••••' : '123456 (default)'}
+                  className="checkout-input py-2 pr-9 text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2.5 top-2.5 text-palm-400 hover:text-palm-700 cursor-pointer"
+                >
+                  <Lock size={13} />
+                </button>
+              </div>
+              <p className="mt-1 text-[10px] text-palm-500">
+                Customer logs in with this password + Email or Phone. Default: <span className="font-mono font-bold text-palm-800">123456</span>
+              </p>
+            </div>
+
+            <div>
+              <label className="font-bold text-palm-700 block mb-1">City *</label>
+              <select
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                className="checkout-input py-2 text-xs font-bold cursor-pointer"
+              >
+                {CITIES.map((c) => (
+                  <option key={c.id} value={c.name}>
+                    {c.name} ({c.province})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="font-bold text-palm-700 block mb-1">Delivery Street Address</label>
+            <input
+              type="text"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="e.g. House 42, Block 5, Clifton, Karachi"
+              className="checkout-input py-2 text-xs"
+            />
+          </div>
+
+          <div>
+            <label className="font-bold text-palm-700 block mb-1.5">Account Status</label>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="customer_status"
+                  value="active"
+                  checked={status === 'active'}
+                  onChange={() => setStatus('active')}
+                  className="text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                />
+                <span className="font-bold text-emerald-800">Active (Can Login & Order)</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="customer_status"
+                  value="blocked"
+                  checked={status === 'blocked'}
+                  onChange={() => setStatus('blocked')}
+                  className="text-coral-600 focus:ring-coral-500 cursor-pointer"
+                />
+                <span className="font-bold text-coral-700">Blocked / Suspended</span>
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label className="font-bold text-palm-700 block mb-1">Admin CRM Notes</label>
+            <textarea
+              rows={2}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="e.g. VIP regular customer, prefers fresh malai coconuts on Sundays..."
+              className="checkout-input py-2 text-xs"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-palm-100">
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-ghost py-2.5 px-5 text-xs font-bold cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="btn-primary py-2.5 px-6 text-xs font-bold shadow-soft cursor-pointer"
+            >
+              {saving ? 'Saving...' : isEditing ? 'Save Changes' : 'Create Customer'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// =========================================================================
+// CUSTOMER ORDERS PREVIEW MODAL
+// =========================================================================
+function CustomerOrdersModal({
+  customer,
+  orders,
+  onClose,
+  onViewSlip,
+}: {
+  customer: Customer;
+  orders: OrderDetails[];
+  onClose: () => void;
+  onViewSlip: (order: OrderDetails) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[125] flex items-center justify-center p-4 bg-palm-950/60 backdrop-blur-sm animate-fadeIn">
+      <div className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-lift border border-palm-200 space-y-4 max-h-[88vh] flex flex-col">
+        {/* Modal Header */}
+        <div className="flex items-center justify-between border-b border-palm-100 pb-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-palm-100 text-palm-800 font-display font-extrabold text-base shadow-soft">
+              {customer.name.slice(0, 2).toUpperCase()}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-display text-lg font-extrabold text-palm-900">
+                  {customer.name}
+                </h3>
+                <span
+                  className={cn(
+                    'chip text-[10px] font-bold py-0.5 px-2',
+                    customer.status === 'active'
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'bg-coral-50 text-coral-700 border border-coral-200'
+                  )}
+                >
+                  {customer.status === 'active' ? 'Active' : 'Blocked'}
+                </span>
+              </div>
+              <p className="text-xs text-palm-500">
+                {customer.phone} · {customer.email} · {customer.city}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-palm-100 text-palm-700 hover:bg-palm-200 cursor-pointer"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Orders summary bar */}
+        <div className="flex items-center justify-between bg-cream-50 rounded-2xl p-3 border border-palm-100 text-xs">
+          <div>
+            <span className="text-palm-500 font-medium">Total Orders: </span>
+            <strong className="text-palm-900 font-bold">{orders.length}</strong>
+          </div>
+          <div>
+            <span className="text-palm-500 font-medium">Total Spend: </span>
+            <strong className="text-coral-600 font-extrabold">
+              {rs(orders.reduce((sum, o) => sum + (o.total || 0), 0))}
+            </strong>
+          </div>
+        </div>
+
+        {/* Orders list */}
+        <div className="flex-1 overflow-y-auto space-y-3 no-scrollbar pr-1">
+          {orders.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-palm-200 p-8 text-center text-palm-500 text-xs">
+              <ShoppingBag size={32} className="mx-auto text-palm-300 mb-2" />
+              <p className="font-bold text-palm-800">No orders placed under this customer phone yet</p>
+              <p className="mt-1 text-[11px] text-palm-400">
+                Orders matching {customer.phone} will appear here with instant printable slips.
+              </p>
+            </div>
+          ) : (
+            orders.map((o) => (
+              <div
+                key={o.ref}
+                className="rounded-2xl border border-palm-200 bg-white p-4 shadow-soft space-y-2.5 hover:border-palm-300 transition text-xs"
+              >
+                <div className="flex items-center justify-between border-b border-palm-100 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="chip bg-palm-100 font-mono text-[11px] font-bold text-palm-900">
+                      {o.ref}
+                    </span>
+                    <span className="text-palm-400 text-[11px]">{o.placedAt}</span>
+                    <span
+                      className={cn(
+                        'chip text-[10px] font-bold py-0.5 px-2',
+                        o.stage === 'delivered'
+                          ? 'bg-palm-100 text-palm-800'
+                          : o.stage === 'transit'
+                          ? 'bg-blue-50 text-blue-700'
+                          : o.stage === 'prep'
+                          ? 'bg-amber-50 text-amber-700'
+                          : 'bg-coral-50 text-coral-700'
+                      )}
+                    >
+                      {o.stage === 'delivered'
+                        ? 'Delivered'
+                        : o.stage === 'transit'
+                        ? 'In Transit'
+                        : o.stage === 'prep'
+                        ? 'Preparation'
+                        : 'Placed'}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => onViewSlip(o)}
+                    className="flex items-center gap-1 rounded-full border border-palm-200 bg-palm-50 px-2.5 py-1 text-[11px] font-bold text-palm-800 hover:bg-palm-100 transition cursor-pointer"
+                  >
+                    <Receipt size={12} className="text-palm-600" />
+                    <span>View Slip</span>
+                  </button>
+                </div>
+
+                <div className="flex justify-between items-start text-palm-700 text-[11px]">
+                  <div>
+                    {o.items.map((item, idx) => (
+                      <div key={idx} className="leading-snug">
+                        {item.quantity}x {item.name}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-right">
+                    <span className="text-palm-400 block">{o.paymentMethod || 'COD'}</span>
+                    <span className="font-extrabold text-coral-600 text-xs">{rs(o.total)}</span>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="pt-2 border-t border-palm-100 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="btn-ghost py-2 px-5 text-xs font-bold cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+

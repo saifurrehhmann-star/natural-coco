@@ -9,9 +9,10 @@ import type {
   HeroSlide,
   OrderDetails,
   OrderStage,
+  Customer,
 } from './types';
 import { CITIES, PICKUP_LOCATIONS, CATEGORIES } from './data';
-import { INITIAL_PRODUCTS, INITIAL_HERO_SLIDES } from './seedData';
+import { INITIAL_PRODUCTS, INITIAL_HERO_SLIDES, INITIAL_CUSTOMERS } from './seedData';
 import {
   fetchProducts,
   createProduct,
@@ -21,6 +22,11 @@ import {
   createCategory,
   updateCategory,
   deleteCategory,
+  fetchCustomers,
+  createCustomer,
+  updateCustomer,
+  deleteCustomer,
+  loginCustomer,
   fetchBanners,
   saveBanners,
   fetchOrders,
@@ -303,25 +309,30 @@ export function isProductVisibleInLocation(product: Product, location: LocationS
   return isKarachi;
 }
 
+export const CUSTOMER_AUTH_KEY = 'natura_customer_session_v1';
+
 export function useStoreData() {
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
   const [categories, setCategories] = useState<Category[]>(CATEGORIES);
+  const [customers, setCustomers] = useState<Customer[]>(INITIAL_CUSTOMERS);
   const [banners, setBanners] = useState<HeroSlide[]>(INITIAL_HERO_SLIDES);
   const [orders, setOrders] = useState<OrderDetails[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refreshData = useCallback(async () => {
     try {
-      const [p, c, b, o] = await Promise.all([
+      const [p, c, cust, b, o] = await Promise.all([
         fetchProducts(),
         fetchCategories(),
+        fetchCustomers(),
         fetchBanners(),
         fetchOrders(),
       ]);
       if (p && p.length > 0) setProducts(p);
       if (c && c.length > 0) setCategories(c);
+      if (Array.isArray(cust)) setCustomers(cust);
       if (b && b.length > 0) setBanners(b);
-      if (o) setOrders(o);
+      if (Array.isArray(o)) setOrders(o);
     } catch (err) {
       console.warn('Refresh error:', err);
     } finally {
@@ -365,6 +376,23 @@ export function useStoreData() {
     await deleteCategory(id);
   }, []);
 
+  // Customer CRUD
+  const addCustomer = useCallback(async (cust: Partial<Customer>) => {
+    const created = await createCustomer(cust);
+    setCustomers((prev) => [created, ...prev]);
+    return created;
+  }, []);
+
+  const editCustomer = useCallback(async (id: string, updates: Partial<Customer>) => {
+    setCustomers((prev) => prev.map((item) => (item.id === id ? { ...item, ...updates } : item)));
+    await updateCustomer(id, updates);
+  }, []);
+
+  const removeCustomer = useCallback(async (id: string) => {
+    setCustomers((prev) => prev.filter((item) => item.id !== id));
+    await deleteCustomer(id);
+  }, []);
+
   const updateAllBanners = useCallback(async (newSlides: HeroSlide[]) => {
     setBanners(newSlides);
     await saveBanners(newSlides);
@@ -372,6 +400,51 @@ export function useStoreData() {
 
   const recordOrder = useCallback(async (order: OrderDetails) => {
     setOrders((prev) => [order, ...prev]);
+
+    // Update customer's totalOrders & totalSpent locally in React state
+    const orderTotal = Number(order.total) || 0;
+    const cleanOrderPhone = (order.phone || '').replace(/\D/g, '');
+    setCustomers((prevCusts) =>
+      prevCusts.map((c) => {
+        const matchesId = order.customerId && c.id === order.customerId;
+        const matchesEmail = order.customerEmail && c.email && c.email.toLowerCase() === order.customerEmail.toLowerCase();
+        const cleanCustPhone = (c.phone || '').replace(/\D/g, '');
+        const matchesPhone = cleanOrderPhone.length >= 7 && cleanCustPhone.length >= 7 && (cleanOrderPhone.endsWith(cleanCustPhone.slice(-7)) || cleanCustPhone.endsWith(cleanOrderPhone.slice(-7)));
+
+        if (matchesId || matchesEmail || matchesPhone) {
+          return {
+            ...c,
+            totalOrders: (c.totalOrders || 0) + 1,
+            totalSpent: (c.totalSpent || 0) + orderTotal,
+            address: c.address || order.address,
+          };
+        }
+        return c;
+      })
+    );
+
+    // Also update logged-in customer session in localStorage if matching
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = window.localStorage.getItem(CUSTOMER_AUTH_KEY);
+        if (raw) {
+          const currentCust = JSON.parse(raw);
+          const matchesId = order.customerId && currentCust.id === order.customerId;
+          const matchesEmail = order.customerEmail && currentCust.email && currentCust.email.toLowerCase() === order.customerEmail.toLowerCase();
+          const cleanCustPhone = (currentCust.phone || '').replace(/\D/g, '');
+          const matchesPhone = cleanOrderPhone.length >= 7 && cleanCustPhone.length >= 7 && (cleanOrderPhone.endsWith(cleanCustPhone.slice(-7)) || cleanCustPhone.endsWith(cleanOrderPhone.slice(-7)));
+          if (matchesId || matchesEmail || matchesPhone) {
+            currentCust.totalOrders = (currentCust.totalOrders || 0) + 1;
+            currentCust.totalSpent = (currentCust.totalSpent || 0) + orderTotal;
+            if (order.address && !currentCust.address) currentCust.address = order.address;
+            window.localStorage.setItem(CUSTOMER_AUTH_KEY, JSON.stringify(currentCust));
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
     await postOrder(order);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
@@ -408,6 +481,7 @@ export function useStoreData() {
   return {
     products,
     categories,
+    customers,
     banners,
     orders,
     loading,
@@ -418,10 +492,71 @@ export function useStoreData() {
     addCategory,
     editCategory,
     removeCategory,
+    addCustomer,
+    editCustomer,
+    removeCustomer,
     updateAllBanners,
     recordOrder,
     changeOrderStatus,
     editOrder,
     removeOrder,
   };
+}
+
+export function useCustomerAuth() {
+  const [customer, setCustomer] = useState<Customer | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = window.localStorage.getItem(CUSTOMER_AUTH_KEY);
+      if (raw) return JSON.parse(raw) as Customer;
+    } catch {
+      /* ignore */
+    }
+    return null;
+  });
+
+  const login = useCallback(async (email: string, pass: string) => {
+    const res = await loginCustomer(email, pass);
+    if (res.success && res.customer) {
+      setCustomer(res.customer);
+      try {
+        window.localStorage.setItem(CUSTOMER_AUTH_KEY, JSON.stringify(res.customer));
+      } catch {
+        /* ignore */
+      }
+      return { success: true, customer: res.customer };
+    }
+    return { success: false, error: res.error || 'Login failed' };
+  }, []);
+
+  const register = useCallback(async (data: Partial<Customer>) => {
+    const created = await createCustomer(data);
+    setCustomer(created);
+    try {
+      window.localStorage.setItem(CUSTOMER_AUTH_KEY, JSON.stringify(created));
+    } catch {
+      /* ignore */
+    }
+    return { success: true, customer: created };
+  }, []);
+
+  const saveCustomerSession = useCallback((cust: Customer) => {
+    setCustomer(cust);
+    try {
+      window.localStorage.setItem(CUSTOMER_AUTH_KEY, JSON.stringify(cust));
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const logout = useCallback(() => {
+    setCustomer(null);
+    try {
+      window.localStorage.removeItem(CUSTOMER_AUTH_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  return { customer, login, register, logout, saveCustomerSession };
 }

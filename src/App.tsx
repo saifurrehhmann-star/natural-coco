@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Sparkles } from 'lucide-react';
-import type { OrderDetails, Product, CartVariation } from '@/types';
+import type { OrderDetails, Product, CartVariation, Category } from '@/types';
 import {
   useLocationState,
   useCart,
@@ -8,6 +8,7 @@ import {
   useCityBannerDismiss,
   useScrollReveal,
   useStoreData,
+  useCustomerAuth,
   isProductVisibleInLocation,
 } from '@/state';
 
@@ -16,6 +17,7 @@ import { Hero } from '@/components/Hero';
 import { HeroSwitcher } from '@/components/HeroSwitcher';
 import { CityBanner, PickupBanner } from '@/components/CityBanner';
 import { CategorySection } from '@/components/CategorySection';
+import { CategoryProductsModal } from '@/components/CategoryProductsModal';
 import { ProductModal } from '@/components/ProductModal';
 import { CartDrawer } from '@/components/CartDrawer';
 import { Checkout } from '@/components/Checkout';
@@ -35,6 +37,7 @@ export default function App() {
   const { items, addItem, updateQuantity, removeItem, clearCart } = useCart();
   const { variant: heroVariant, setVariant: setHeroVariant } = useHeroVariant();
   const { dismissed: bannerDismissed, dismiss: dismissBanner } = useCityBannerDismiss();
+  const { customer: customerUser, logout: handleCustomerLogout, saveCustomerSession } = useCustomerAuth();
   useScrollReveal();
 
   const {
@@ -42,12 +45,16 @@ export default function App() {
     categories,
     banners,
     orders,
+    customers,
     addProduct,
     editProduct,
     removeProduct,
     addCategory,
     editCategory,
     removeCategory,
+    addCustomer,
+    editCustomer,
+    removeCustomer,
     updateAllBanners,
     recordOrder,
     changeOrderStatus,
@@ -58,6 +65,7 @@ export default function App() {
 
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [activeProduct, setActiveProduct] = useState<Product | null>(null);
+  const [selectedSeeAllCategory, setSelectedSeeAllCategory] = useState<Category | null>(null);
   const [order, setOrder] = useState<OrderDetails | null>(null);
   const [barVisible, setBarVisible] = useState(true);
 
@@ -175,6 +183,7 @@ export default function App() {
         location={location}
         cartCount={cartCount}
         isAdminLoggedIn={isAdminLoggedIn}
+        customerUser={customerUser}
         onOpenLocation={() => setOverlay('location')}
         onOpenCart={() => setOverlay('cart')}
         onOpenAdmin={() => {
@@ -186,6 +195,7 @@ export default function App() {
         }}
         onOpenAuth={() => setOverlay('auth')}
         onLogoutAdmin={handleAdminLogout}
+        onLogoutCustomer={handleCustomerLogout}
       />
 
       <main>
@@ -236,6 +246,7 @@ export default function App() {
               products={catProducts}
               onOpenProduct={openProduct}
               onQuickAdd={quickAdd}
+              onSeeAll={(cat) => setSelectedSeeAllCategory(cat)}
             />
           ))}
         </div>
@@ -250,6 +261,24 @@ export default function App() {
         items={items}
         onOpen={() => setOverlay('cart')}
         visible={barVisible}
+      />
+
+      {/* Category Products Full View Modal ("See All") */}
+      <CategoryProductsModal
+        open={selectedSeeAllCategory !== null}
+        category={selectedSeeAllCategory}
+        products={
+          selectedSeeAllCategory
+            ? products.filter(
+                (p) =>
+                  p.categoryId === selectedSeeAllCategory.id &&
+                  isProductVisibleInLocation(p, location)
+              )
+            : []
+        }
+        onClose={() => setSelectedSeeAllCategory(null)}
+        onOpenProduct={openProduct}
+        onQuickAdd={quickAdd}
       />
 
       {/* Overlays */}
@@ -291,6 +320,7 @@ export default function App() {
         onBack={() => setOverlay('cart')}
         items={items}
         location={location}
+        customerUser={customerUser}
         onPlaceOrder={handlePlaceOrder}
       />
 
@@ -309,12 +339,16 @@ export default function App() {
         categories={categories}
         banners={banners}
         orders={orders}
+        customers={customers}
         onAddProduct={addProduct}
         onEditProduct={editProduct}
         onDeleteProduct={removeProduct}
         onAddCategory={addCategory}
         onEditCategory={editCategory}
         onDeleteCategory={removeCategory}
+        onAddCustomer={addCustomer}
+        onEditCustomer={editCustomer}
+        onDeleteCustomer={removeCustomer}
         onUpdateBanners={updateAllBanners}
         onUpdateOrderStatus={changeOrderStatus}
         onEditOrder={editOrder}
@@ -329,6 +363,9 @@ export default function App() {
         isAdminLoggedIn={isAdminLoggedIn}
         onAdminLogin={handleAdminLogin}
         onLogout={handleAdminLogout}
+        customerUser={customerUser}
+        onCustomerLogin={saveCustomerSession}
+        onCustomerLogout={handleCustomerLogout}
       />
     </div>
   );
