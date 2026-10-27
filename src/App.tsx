@@ -52,6 +52,7 @@ export default function App() {
     addCategory,
     editCategory,
     removeCategory,
+    updateAllCategories,
     addCustomer,
     editCustomer,
     removeCustomer,
@@ -346,6 +347,7 @@ export default function App() {
         onAddCategory={addCategory}
         onEditCategory={editCategory}
         onDeleteCategory={removeCategory}
+        onUpdateCategories={updateAllCategories}
         onAddCustomer={addCustomer}
         onEditCustomer={editCustomer}
         onDeleteCustomer={removeCustomer}

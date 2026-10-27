@@ -1,7 +1,7 @@
 import { ChevronRight } from 'lucide-react';
 import type { Category, Product } from '@/types';
 import { ProductCard } from './ProductCard';
-import { categoryIcon } from '@/utils/icons';
+import { CategoryIcon } from '@/utils/icons';
 
 interface Props {
   category: Category;
@@ -13,14 +13,13 @@ interface Props {
 
 export function CategorySection({ category, products, onOpenProduct, onQuickAdd, onSeeAll }: Props) {
   if (products.length === 0) return null;
-  const Icon = categoryIcon(category.emoji);
 
   return (
     <section className="mx-auto max-w-6xl px-4 sm:px-6">
       <div className="reveal mb-4 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-palm-100 text-palm-700">
-            <Icon size={22} />
+            <CategoryIcon emoji={category.emoji} size={22} />
           </span>
           <div>
             <h2 className="text-xl font-extrabold text-palm-900 sm:text-2xl">

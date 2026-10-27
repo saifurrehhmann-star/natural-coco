@@ -11,6 +11,7 @@ import {
   Edit2,
   RefreshCw,
   Search,
+  Check,
   CheckCircle2,
   Save,
   X,
@@ -49,7 +50,14 @@ import type {
 import { CITIES, PICKUP_LOCATIONS, BRAND } from '@/data';
 import { rs } from '@/utils/format';
 import { cn } from '@/utils/cn';
-import { OrderReceiptModal } from './OrderReceiptModal';
+import {
+  CategoryIcon,
+  CATEGORY_ICON_OPTIONS,
+  getCategoryIconMeta,
+  POPULAR_CATEGORY_EMOJIS,
+  isCustomImageIcon,
+  isPresetIcon,
+} from '@/utils/icons';
 
 interface Props {
   open: boolean;
@@ -65,6 +73,7 @@ interface Props {
   onAddCategory: (c: Category) => Promise<Category | unknown>;
   onEditCategory: (id: string, updates: Partial<Category>) => Promise<void | unknown>;
   onDeleteCategory: (id: string) => Promise<boolean | unknown>;
+  onUpdateCategories?: (cats: Category[]) => Promise<Category[] | unknown>;
   onAddCustomer: (c: Partial<Customer>) => Promise<Customer | unknown>;
   onEditCustomer: (id: string, updates: Partial<Customer>) => Promise<void | unknown>;
   onDeleteCustomer: (id: string) => Promise<boolean | unknown>;
@@ -102,6 +111,7 @@ export function AdminDashboard({
   onAddCategory,
   onEditCategory,
   onDeleteCategory,
+  onUpdateCategories,
   onAddCustomer,
   onEditCustomer,
   onDeleteCustomer,
@@ -117,6 +127,7 @@ export function AdminDashboard({
   const [searchQuery, setSearchQuery] = useState('');
   const [categorySearch, setCategorySearch] = useState('');
   const [productCityFilter, setProductCityFilter] = useState<'all' | 'nationwide' | 'karachi_only'>('all');
+  const [productCategoryFilter, setProductCategoryFilter] = useState<'all' | 'no-category' | string>('all');
   
   // Customer state & modals
   const [customerSearch, setCustomerSearch] = useState('');
@@ -148,6 +159,10 @@ export function AdminDashboard({
   const [localBanners, setLocalBanners] = useState<HeroSlide[]>(banners);
   const [savingBanners, setSavingBanners] = useState(false);
 
+  // Local editable categories state for custom ordering & sequence sync
+  const [localCategories, setLocalCategories] = useState<Category[]>(categories);
+  const [savingCategories, setSavingCategories] = useState(false);
+
   // Store Settings state
   const [storeName, setStoreName] = useState(BRAND.name);
   const [storePhone, setStorePhone] = useState(BRAND.phone);
@@ -160,6 +175,34 @@ export function AdminDashboard({
       setLocalBanners(banners);
     }
   }, [banners]);
+
+  useEffect(() => {
+    if (categories && categories.length > 0) {
+      setLocalCategories(categories);
+    }
+  }, [categories]);
+
+  const handleMoveCategory = async (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= localCategories.length) return;
+    const copy = [...localCategories];
+    const temp = copy[index];
+    copy[index] = copy[targetIndex];
+    copy[targetIndex] = temp;
+    setLocalCategories(copy);
+    if (onUpdateCategories) {
+      await onUpdateCategories(copy);
+    }
+    showToast(`Category display order updated! "${temp.name}" moved ${direction}.`);
+  };
+
+  const handleSaveCategoriesOrder = async () => {
+    if (!onUpdateCategories) return;
+    setSavingCategories(true);
+    await onUpdateCategories(localCategories);
+    setSavingCategories(false);
+    showToast('All category positions saved & synced live to storefront!');
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -259,11 +302,23 @@ export function AdminDashboard({
     };
   }, [products, categories, orders, banners, customers]);
 
+  const unassignedProducts = useMemo(() => {
+    const validCatIds = new Set(categories.map((c) => c.id));
+    return products.filter(
+      (p) => !p.categoryId || p.categoryId === 'no-category' || !validCatIds.has(p.categoryId)
+    );
+  }, [products, categories]);
+
   const filteredProducts = useMemo(() => {
+    const validCatIds = new Set(categories.map((c) => c.id));
     return products.filter((p) => {
+      const isUnassigned =
+        !p.categoryId || p.categoryId === 'no-category' || !validCatIds.has(p.categoryId);
+
       const matchesSearch =
         p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         p.categoryId.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (isUnassigned && 'no category uncategorized unassigned'.includes(searchQuery.toLowerCase())) ||
         (p.badge && p.badge.toLowerCase().includes(searchQuery.toLowerCase()));
 
       const matchesCity =
@@ -273,17 +328,24 @@ export function AdminDashboard({
           ? p.cityVisibility === 'nationwide'
           : p.cityVisibility === 'karachi_only';
 
-      return matchesSearch && matchesCity;
+      const matchesCategory =
+        productCategoryFilter === 'all'
+          ? true
+          : productCategoryFilter === 'no-category'
+          ? isUnassigned
+          : p.categoryId === productCategoryFilter;
+
+      return matchesSearch && matchesCity && matchesCategory;
     });
-  }, [products, searchQuery, productCityFilter]);
+  }, [products, searchQuery, productCityFilter, productCategoryFilter, categories]);
 
   const filteredCategories = useMemo(() => {
-    return categories.filter((c) =>
+    return localCategories.filter((c) =>
       c.name.toLowerCase().includes(categorySearch.toLowerCase()) ||
       c.tagline.toLowerCase().includes(categorySearch.toLowerCase()) ||
       c.id.toLowerCase().includes(categorySearch.toLowerCase())
     );
-  }, [categories, categorySearch]);
+  }, [localCategories, categorySearch]);
 
   const filteredCustomers = useMemo(() => {
     return (customers || []).filter((c) => {
@@ -630,7 +692,24 @@ export function AdminDashboard({
                   />
                 </div>
 
-                <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                <div className="flex flex-wrap items-center gap-1.5 self-end sm:self-auto">
+                  {unassignedProducts.length > 0 && (
+                    <button
+                      onClick={() =>
+                        setProductCategoryFilter(
+                          productCategoryFilter === 'no-category' ? 'all' : 'no-category'
+                        )
+                      }
+                      className={cn(
+                        'chip transition cursor-pointer font-black',
+                        productCategoryFilter === 'no-category'
+                          ? 'bg-amber-500 text-white shadow-xs'
+                          : 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200'
+                      )}
+                    >
+                      ⚠️ No Category ({unassignedProducts.length})
+                    </button>
+                  )}
                   <span className="text-xs font-bold text-palm-600 mr-1">City Filter:</span>
                   <button
                     onClick={() => setProductCityFilter('all')}
@@ -672,11 +751,19 @@ export function AdminDashboard({
                 {filteredProducts.map((p) => {
                   const isNationwide = p.cityVisibility === 'nationwide';
                   const isKarachi = p.cityVisibility === 'karachi_only';
+                  const isUnassigned =
+                    !p.categoryId ||
+                    p.categoryId === 'no-category' ||
+                    !categories.some((c) => c.id === p.categoryId);
+                  const catName = categories.find((c) => c.id === p.categoryId)?.name;
 
                   return (
                     <div
                       key={p.id}
-                      className="flex flex-col justify-between rounded-3xl border border-palm-200/80 bg-white p-4 shadow-card hover:shadow-lift transition-all duration-300"
+                      className={cn(
+                        "flex flex-col justify-between rounded-3xl border bg-white p-4 shadow-card hover:shadow-lift transition-all duration-300",
+                        isUnassigned ? "border-amber-300 ring-2 ring-amber-100" : "border-palm-200/80"
+                      )}
                     >
                       <div>
                         <div className="relative aspect-video w-full overflow-hidden rounded-2xl bg-palm-100">
@@ -705,10 +792,38 @@ export function AdminDashboard({
                         </div>
 
                         <div className="mt-3.5">
-                          <div className="flex items-center justify-between text-[11px] text-palm-500 font-bold uppercase tracking-wider">
-                            <span>{p.categoryId.replace(/-/g, ' ')}</span>
-                            <span>{p.size || p.unit || 'Standard'}</span>
+                          <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider">
+                            {isUnassigned ? (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 text-[10px] font-black tracking-normal lowercase first-letter:uppercase">
+                                ⚠️ No Category
+                              </span>
+                            ) : (
+                              <span className="text-palm-600 font-bold">{catName || p.categoryId.replace(/-/g, ' ')}</span>
+                            )}
+                            <span className="text-palm-500">{p.size || p.unit || 'Standard'}</span>
                           </div>
+
+                          {isUnassigned && (
+                            <div className="mt-2 p-2 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-2">
+                              <span className="text-[10px] font-black text-amber-900">Assign:</span>
+                              <select
+                                value=""
+                                onChange={async (e) => {
+                                  const newCatId = e.target.value;
+                                  if (!newCatId) return;
+                                  await onEditProduct(p.id, { categoryId: newCatId });
+                                  const targetCat = categories.find((c) => c.id === newCatId);
+                                  showToast(`Assigned "${p.name}" to category "${targetCat?.name || newCatId}"!`);
+                                }}
+                                className="rounded-lg border border-amber-300 bg-white py-1 px-2 text-[10px] font-bold text-amber-950 cursor-pointer outline-none"
+                              >
+                                <option value="" disabled>Select Category...</option>
+                                {categories.map((c) => (
+                                  <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
                           <h3 className="mt-1 font-display text-base font-extrabold text-palm-900 line-clamp-1">
                             {p.name}
                           </h3>
@@ -756,28 +871,42 @@ export function AdminDashboard({
           )}
 
           {/* ========================================================= */}
-          {/* TAB 3: CATEGORIES MANAGEMENT (NEW DEDICATED TAB)          */}
+          {/* TAB 3: CATEGORIES MANAGEMENT (REORDER, ICONS, MOVE PRODUCTS) */}
           {/* ========================================================= */}
           {activeTab === 'categories' && (
             <div className="space-y-6 max-w-7xl mx-auto animate-fadeIn">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <h1 className="font-display text-3xl font-extrabold tracking-tight text-palm-900">
-                    Categories Management ({categories.length})
+                    Categories Management ({localCategories.length})
                   </h1>
                   <p className="mt-1 text-xs text-palm-600 font-medium">
-                    Add new categories, edit names and delivery rules, view how many products are inside each category, and manage catalog groups.
+                    Reorder category positions on the live storefront, set custom visual icons, and view or move products between categories.
                   </p>
                 </div>
-                <button
-                  onClick={() => setIsCreatingCategory(true)}
-                  className="btn-primary py-2.5 px-6 text-xs font-bold shadow-soft self-start sm:self-auto cursor-pointer"
-                >
-                  <Plus size={16} /> Add New Category
-                </button>
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={handleSaveCategoriesOrder}
+                    disabled={savingCategories}
+                    className="btn-primary py-2.5 px-5 text-xs font-bold shadow-soft flex items-center gap-2 cursor-pointer bg-palm-800 hover:bg-palm-900"
+                    title="Save categories display order live to website"
+                  >
+                    <Save size={15} />
+                    <span>{savingCategories ? 'Syncing...' : 'Save Sequence Live'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingCategory(true)}
+                    className="btn-primary py-2.5 px-5 text-xs font-bold shadow-soft flex items-center gap-2 cursor-pointer"
+                  >
+                    <Plus size={16} /> Add Category
+                  </button>
+                </div>
               </div>
 
-              <div className="flex items-center justify-between gap-3 bg-white p-3.5 rounded-3xl border border-palm-200/80 shadow-soft">
+              {/* Search & Stats Bar */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3.5 rounded-3xl border border-palm-200/80 shadow-soft">
                 <div className="relative flex-1 max-w-md">
                   <Search size={16} className="absolute left-3.5 top-3 text-palm-400" />
                   <input
@@ -788,28 +917,111 @@ export function AdminDashboard({
                     className="w-full rounded-2xl border border-palm-200 bg-cream-50/60 py-2.5 pl-9 pr-3 text-xs font-medium text-palm-900 outline-none focus:border-palm-500 focus:bg-white"
                   />
                 </div>
-                <div className="text-xs font-bold text-palm-600">
-                  Total Groups: <span className="font-extrabold text-palm-900">{categories.length}</span>
+                <div className="flex items-center gap-3 text-xs font-bold text-palm-600">
+                  <span>Store Sequence: <span className="font-extrabold text-palm-900">Top to Bottom</span></span>
+                  <span className="text-palm-300">|</span>
+                  <span>Total Groups: <span className="font-extrabold text-palm-900">{localCategories.length}</span></span>
                 </div>
               </div>
 
+              {/* Unassigned / No-Category Products Section (if any category was deleted) */}
+              {unassignedProducts.length > 0 && (
+                <div className="rounded-3xl border-2 border-dashed border-amber-300 bg-amber-50/80 p-5 shadow-soft space-y-4 animate-fadeIn">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-200/80 pb-3">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-amber-500 text-white shadow-soft">
+                        <AlertCircle size={20} />
+                      </span>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-display text-base font-black text-amber-950">
+                            Unassigned Products ({unassignedProducts.length}) — No Category
+                          </h3>
+                          <span className="chip bg-amber-200 text-amber-900 text-[10px] font-black border border-amber-300">
+                            Category Deleted / Needs Assignment
+                          </span>
+                        </div>
+                        <p className="text-xs text-amber-800 mt-0.5">
+                          Yeh products un categories se hain jo delete ho chuki hain. Aap inhein neechay kisi bhi active category mein assign/move kar saktay hain:
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {unassignedProducts.map((p) => (
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between gap-2.5 rounded-2xl bg-white p-3 border border-amber-200 shadow-2xs hover:border-amber-300 transition"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <img
+                            src={p.image}
+                            alt={p.name}
+                            className="h-10 w-10 rounded-xl object-cover shrink-0 shadow-2xs border border-palm-100"
+                          />
+                          <div className="min-w-0">
+                            <h4 className="font-extrabold text-xs text-palm-900 truncate">{p.name}</h4>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className="font-extrabold text-coral-600 text-[11px]">{rs(p.price)}</span>
+                              <span className="text-[9px] font-black text-amber-900 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200">
+                                No Category
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="shrink-0">
+                          <select
+                            value=""
+                            onChange={async (e) => {
+                              const newCatId = e.target.value;
+                              if (!newCatId) return;
+                              await onEditProduct(p.id, { categoryId: newCatId });
+                              const targetCat = categories.find((c) => c.id === newCatId);
+                              showToast(`Product "${p.name}" assigned to "${targetCat?.name || newCatId}"!`);
+                            }}
+                            className="rounded-xl border border-amber-300 bg-amber-50/90 hover:bg-amber-100 py-1.5 px-2.5 text-xs font-black text-amber-950 cursor-pointer outline-none shadow-2xs transition"
+                            title="Assign to a category"
+                          >
+                            <option value="" disabled>Assign to...</option>
+                            {categories.map((targetCat) => (
+                              <option key={targetCat.id} value={targetCat.id}>
+                                {targetCat.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {filteredCategories.map((c) => {
+                  const originalIndex = localCategories.findIndex((item) => item.id === c.id);
                   const catProducts = products.filter((p) => p.categoryId === c.id);
+                  const iconMeta = getCategoryIconMeta(c.emoji);
 
                   return (
                     <div
                       key={c.id}
                       className="rounded-3xl border border-palm-200/80 bg-white p-6 shadow-card hover:shadow-lift transition-all duration-300 space-y-4"
                     >
+                      {/* Category Header */}
                       <div className="flex items-start justify-between gap-3 border-b border-palm-100 pb-3">
-                        <div className="flex items-center gap-3">
-                          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-palm-100 text-palm-800 font-display font-extrabold text-lg shadow-soft">
-                            {c.name.slice(0, 2).toUpperCase()}
-                          </span>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h3 className="font-display text-base font-extrabold text-palm-900">
+                        <div className="flex items-center gap-3 min-w-0">
+                          {/* Visual Category Icon Container */}
+                          <div
+                            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-palm-700 text-white shadow-soft ring-2 ring-palm-100 overflow-hidden"
+                            title={`Icon: ${iconMeta.label}`}
+                          >
+                            <CategoryIcon emoji={c.emoji} size={24} className="text-white" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h3 className="font-display text-base font-extrabold text-palm-900 truncate">
                                 {c.name}
                               </h3>
                               <span
@@ -823,21 +1035,65 @@ export function AdminDashboard({
                                 {c.nationwide ? 'Nationwide' : 'Karachi Only'}
                               </span>
                             </div>
-                            <p className="text-xs text-palm-500 mt-0.5 line-clamp-1">{c.tagline}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="inline-flex items-center gap-1 rounded-md bg-palm-100/90 text-palm-800 px-2 py-0.5 text-[10px] font-extrabold">
+                                <CategoryIcon emoji={c.emoji} size={12} />
+                                <span>{iconMeta.label}</span>
+                              </span>
+                              <p className="text-xs text-palm-500 truncate">{c.tagline}</p>
+                            </div>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-1.5">
+                        {/* Category Reordering & Action Controls */}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {/* Move Up / Down Buttons for storefront sequence */}
+                          <div className="flex items-center gap-0.5 bg-palm-50 p-1 rounded-xl border border-palm-200">
+                            <button
+                              type="button"
+                              disabled={originalIndex <= 0}
+                              onClick={() => handleMoveCategory(originalIndex, 'up')}
+                              className={cn(
+                                "flex h-7 w-7 items-center justify-center rounded-lg transition",
+                                originalIndex <= 0
+                                  ? "text-palm-300 cursor-not-allowed"
+                                  : "text-palm-700 hover:bg-white hover:shadow-xs active:scale-95 cursor-pointer"
+                              )}
+                              title="Move category up in storefront order"
+                            >
+                              <ArrowUp size={13} />
+                            </button>
+                            <span className="text-[10px] font-mono font-black text-palm-700 px-1">
+                              #{originalIndex + 1}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={originalIndex >= localCategories.length - 1}
+                              onClick={() => handleMoveCategory(originalIndex, 'down')}
+                              className={cn(
+                                "flex h-7 w-7 items-center justify-center rounded-lg transition",
+                                originalIndex >= localCategories.length - 1
+                                  ? "text-palm-300 cursor-not-allowed"
+                                  : "text-palm-700 hover:bg-white hover:shadow-xs active:scale-95 cursor-pointer"
+                              )}
+                              title="Move category down in storefront order"
+                            >
+                              <ArrowDown size={13} />
+                            </button>
+                          </div>
+
                           <button
+                            type="button"
                             onClick={() => setEditingCategory(c)}
-                            className="flex h-8 w-8 items-center justify-center rounded-full border border-palm-200 text-palm-700 hover:bg-palm-50 cursor-pointer"
-                            title="Edit Category"
+                            className="flex h-8 w-8 items-center justify-center rounded-full border border-palm-200 text-palm-700 hover:bg-palm-50 transition cursor-pointer"
+                            title="Edit Category & Change Icon"
                           >
                             <Edit2 size={13} />
                           </button>
                           <button
+                            type="button"
                             onClick={() => setDeletingCategory(c)}
-                            className="flex h-8 w-8 items-center justify-center rounded-full border border-coral-200 text-coral-600 hover:bg-coral-50 cursor-pointer"
+                            className="flex h-8 w-8 items-center justify-center rounded-full border border-coral-200 text-coral-600 hover:bg-coral-50 transition cursor-pointer"
                             title="Delete Category"
                           >
                             <Trash2 size={13} />
@@ -845,41 +1101,67 @@ export function AdminDashboard({
                         </div>
                       </div>
 
-                      {/* Products preview */}
+                      {/* Products preview & direct move/reassignment */}
                       <div>
                         <div className="flex items-center justify-between text-xs font-bold text-palm-700 mb-2">
-                          <span>Products in Category:</span>
+                          <span>Products in this Category:</span>
                           <span className="chip bg-palm-50 border border-palm-200 text-palm-900 text-[11px] font-extrabold py-0.5">
                             {catProducts.length} {catProducts.length === 1 ? 'Product' : 'Products'}
                           </span>
                         </div>
 
                         {catProducts.length === 0 ? (
-                          <div className="rounded-2xl border border-dashed border-palm-200 bg-cream-50/50 p-4 text-center text-xs text-palm-400">
+                          <div className="rounded-2xl border border-dashed border-palm-200 bg-cream-50/50 p-4 text-center text-xs text-palm-500">
                             No products currently assigned to this category.
                           </div>
                         ) : (
-                          <div className="space-y-1.5 max-h-48 overflow-y-auto no-scrollbar pr-1">
+                          <div className="space-y-2 max-h-56 overflow-y-auto no-scrollbar pr-1">
                             {catProducts.map((p) => (
                               <div
                                 key={p.id}
-                                className="flex items-center justify-between gap-2.5 rounded-xl bg-cream-50 p-2 text-xs border border-palm-100/80"
+                                className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-2xl bg-cream-50 p-2.5 text-xs border border-palm-100/90 hover:border-palm-300 transition"
                               >
-                                <div className="flex items-center gap-2 min-w-0">
+                                <div className="flex items-center gap-2.5 min-w-0">
                                   <img
                                     src={p.image}
                                     alt={p.name}
-                                    className="h-7 w-7 rounded-lg object-cover shrink-0"
+                                    className="h-8 w-8 rounded-xl object-cover shrink-0 shadow-2xs"
                                   />
-                                  <span className="font-bold text-palm-900 truncate">{p.name}</span>
+                                  <div className="min-w-0">
+                                    <p className="font-bold text-palm-900 truncate leading-snug">{p.name}</p>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-extrabold text-coral-600 text-[11px]">
+                                        {rs(p.price)}
+                                      </span>
+                                      {p.inStock === false && (
+                                        <span className="text-[9px] font-bold text-coral-600 bg-coral-50 px-1 rounded">Out of stock</span>
+                                      )}
+                                    </div>
+                                  </div>
                                 </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <span className="font-extrabold text-coral-600 text-[11px]">
-                                    {rs(p.price)}
-                                  </span>
-                                  {p.inStock === false && (
-                                    <span className="text-[9px] font-bold text-coral-600">OOS</span>
-                                  )}
+
+                                {/* Direct Product Move to Another Category */}
+                                <div className="flex items-center gap-1.5 self-end sm:self-auto shrink-0 bg-white/90 p-1 rounded-xl border border-palm-200/80 shadow-2xs">
+                                  <span className="text-[10px] text-palm-500 font-bold pl-1">Move to:</span>
+                                  <select
+                                    value={p.categoryId}
+                                    onChange={async (e) => {
+                                      const newCatId = e.target.value;
+                                      if (newCatId === p.categoryId) return;
+                                      await onEditProduct(p.id, { categoryId: newCatId });
+                                      const targetCat = categories.find((cat) => cat.id === newCatId);
+                                      showToast(`Moved "${p.name}" to category "${targetCat?.name || newCatId}"!`);
+                                    }}
+                                    className="rounded-lg border border-palm-200 bg-cream-50 py-1 px-2 text-[11px] font-bold text-palm-900 hover:border-palm-400 cursor-pointer outline-none transition"
+                                    title="Move product into another category"
+                                  >
+                                    <option value={c.id} disabled>Change Category...</option>
+                                    {categories.map((targetCat) => (
+                                      <option key={targetCat.id} value={targetCat.id} disabled={targetCat.id === c.id}>
+                                        {targetCat.name} {targetCat.id === c.id ? '(Current)' : ''}
+                                      </option>
+                                    ))}
+                                  </select>
                                 </div>
                               </div>
                             ))}
@@ -2445,6 +2727,11 @@ function ProductEditorModal({
                   onChange={(e) => setCategoryId(e.target.value)}
                   className="checkout-input py-2.5 text-xs font-bold cursor-pointer"
                 >
+                  {(!categoryId || categoryId === 'no-category' || !categories.some((cat) => cat.id === categoryId)) && (
+                    <option value={categoryId || 'no-category'} disabled>
+                      ⚠️ Currently No Category — Please select category
+                    </option>
+                  )}
                   {categories.map((cat) => (
                     <option key={cat.id} value={cat.id}>
                       {cat.name} ({cat.nationwide ? 'Nationwide' : 'Karachi'})
@@ -2861,6 +3148,22 @@ function CategoryEditorModal({
   const [tagline, setTagline] = useState(category?.tagline || '');
   const [nationwide, setNationwide] = useState(category?.nationwide ?? true);
   const [emoji, setEmoji] = useState(category?.emoji || 'coconut');
+  const [iconTab, setIconTab] = useState<'preset' | 'emoji' | 'image'>(() => {
+    if (isCustomImageIcon(category?.emoji)) return 'image';
+    if (category?.emoji && !isPresetIcon(category?.emoji)) return 'emoji';
+    return 'preset';
+  });
+  const [customEmojiInput, setCustomEmojiInput] = useState(() => {
+    if (category?.emoji && !isPresetIcon(category?.emoji) && !isCustomImageIcon(category?.emoji)) {
+      return category.emoji;
+    }
+    return '';
+  });
+  const [imageUrlInput, setImageUrlInput] = useState(() => {
+    if (isCustomImageIcon(category?.emoji)) return category?.emoji || '';
+    return '';
+  });
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -2965,19 +3268,245 @@ function CategoryEditorModal({
             </div>
           </div>
 
-          <div>
-            <label className="font-bold text-palm-700 block mb-1">Category Icon Theme</label>
-            <select
-              value={emoji}
-              onChange={(e) => setEmoji(e.target.value)}
-              className="checkout-input py-2 text-xs font-bold cursor-pointer"
-            >
-              <option value="coconut">Coconut (Default)</option>
-              <option value="bottle">Bottle (Coconut Water)</option>
-              <option value="juice">Juice (Cold-pressed)</option>
-              <option value="bundle">Bundle & Packs</option>
-              <option value="extra">Extras / Treats</option>
-            </select>
+          {/* Category Icon Chooser with Presets, Custom Emoji, and Upload/URL */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="font-bold text-palm-700">Category Icon</label>
+              {(() => {
+                const currentMeta = getCategoryIconMeta(emoji);
+                return (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-coral-50 px-2.5 py-0.5 text-[11px] font-extrabold text-coral-700 border border-coral-200">
+                    <CategoryIcon emoji={emoji} size={14} />
+                    <span>{currentMeta.label}</span>
+                  </span>
+                );
+              })()}
+            </div>
+
+            {/* Mode Switcher Tabs */}
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-palm-100/70 rounded-2xl text-[11px] font-extrabold">
+              <button
+                type="button"
+                onClick={() => setIconTab('preset')}
+                className={cn(
+                  'py-1.5 px-2 rounded-xl transition text-center cursor-pointer',
+                  iconTab === 'preset'
+                    ? 'bg-white text-palm-900 shadow-xs'
+                    : 'text-palm-600 hover:text-palm-900'
+                )}
+              >
+                1. Preset Icons ({CATEGORY_ICON_OPTIONS.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setIconTab('emoji')}
+                className={cn(
+                  'py-1.5 px-2 rounded-xl transition text-center cursor-pointer',
+                  iconTab === 'emoji'
+                    ? 'bg-white text-palm-900 shadow-xs'
+                    : 'text-palm-600 hover:text-palm-900'
+                )}
+              >
+                2. Custom Emoji (🥥 🌴)
+              </button>
+              <button
+                type="button"
+                onClick={() => setIconTab('image')}
+                className={cn(
+                  'py-1.5 px-2 rounded-xl transition text-center cursor-pointer',
+                  iconTab === 'image'
+                    ? 'bg-white text-palm-900 shadow-xs'
+                    : 'text-palm-600 hover:text-palm-900'
+                )}
+              >
+                3. Upload / Image
+              </button>
+            </div>
+
+            {/* TAB 1: PRESET ICONS */}
+            {iconTab === 'preset' && (
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 max-h-48 overflow-y-auto p-2 rounded-2xl border border-palm-200 bg-cream-50/60">
+                {CATEGORY_ICON_OPTIONS.map((opt) => {
+                  const IconComponent = opt.icon;
+                  const isSelected = emoji === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setEmoji(opt.id)}
+                      className={cn(
+                        'flex flex-col items-center gap-1 p-2 rounded-xl border text-center transition cursor-pointer text-[11px]',
+                        isSelected
+                          ? 'border-coral-500 bg-coral-50 text-coral-800 font-extrabold shadow-xs ring-2 ring-coral-300'
+                          : 'border-palm-200/80 bg-white hover:bg-palm-50 text-palm-700'
+                      )}
+                    >
+                      <span className={cn(
+                        'flex h-7 w-7 items-center justify-center rounded-lg transition',
+                        isSelected ? 'bg-coral-600 text-white' : 'bg-palm-100 text-palm-700'
+                      )}>
+                        <IconComponent size={15} />
+                      </span>
+                      <span className="truncate max-w-full leading-tight font-medium">{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* TAB 2: CUSTOM EMOJI */}
+            {iconTab === 'emoji' && (
+              <div className="rounded-2xl border border-palm-200 bg-cream-50/60 p-3 space-y-3">
+                <div>
+                  <label className="text-[11px] font-bold text-palm-700 block mb-1">
+                    Apni marzi ka koi bhi Emoji ya symbol type/paste karein:
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={customEmojiInput}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setCustomEmojiInput(val);
+                        if (val.trim()) {
+                          setEmoji(val.trim());
+                        }
+                      }}
+                      placeholder="e.g. 🥥, 🥤, 🌴, 🍹, 🍯, 🍦..."
+                      className="checkout-input py-2 text-sm font-bold flex-1"
+                    />
+                    {customEmojiInput && (
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white border border-palm-200 text-xl shadow-xs">
+                        {customEmojiInput}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-palm-500 block mb-1.5">
+                    Popular Quick-Pick Emojis:
+                  </span>
+                  <div className="grid grid-cols-8 gap-1.5">
+                    {POPULAR_CATEGORY_EMOJIS.map((em) => (
+                      <button
+                        key={em}
+                        type="button"
+                        onClick={() => {
+                          setCustomEmojiInput(em);
+                          setEmoji(em);
+                        }}
+                        className={cn(
+                          'h-9 rounded-xl border flex items-center justify-center text-lg transition active:scale-90 cursor-pointer',
+                          emoji === em
+                            ? 'border-coral-500 bg-coral-100 shadow-xs ring-2 ring-coral-300'
+                            : 'border-palm-200 bg-white hover:bg-palm-50'
+                        )}
+                        title={`Choose ${em}`}
+                      >
+                        {em}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: CUSTOM IMAGE / UPLOAD */}
+            {iconTab === 'image' && (
+              <div className="rounded-2xl border border-palm-200 bg-cream-50/60 p-3 space-y-3">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        if (typeof reader.result === 'string') {
+                          setEmoji(reader.result);
+                          setImageUrlInput(reader.result);
+                        }
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  }}
+                />
+
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex-1 rounded-xl border border-palm-300 bg-white hover:bg-palm-50 py-2.5 px-3 text-xs font-bold text-palm-800 flex items-center justify-center gap-2 transition cursor-pointer shadow-xs"
+                  >
+                    <Upload size={14} className="text-palm-600" />
+                    <span>Upload Image Icon from Device</span>
+                  </button>
+
+                  {isCustomImageIcon(emoji) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEmoji('coconut');
+                        setImageUrlInput('');
+                      }}
+                      className="rounded-xl border border-coral-200 bg-coral-50 text-coral-700 py-2.5 px-3 text-xs font-bold hover:bg-coral-100 transition cursor-pointer"
+                    >
+                      Clear Image
+                    </button>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-palm-700 block mb-1">
+                    Or Enter Icon Image URL (Online Link):
+                  </label>
+                  <input
+                    type="url"
+                    value={imageUrlInput.startsWith('data:image') ? 'Uploaded image file' : imageUrlInput}
+                    disabled={imageUrlInput.startsWith('data:image')}
+                    onChange={(e) => {
+                      setImageUrlInput(e.target.value);
+                      if (e.target.value.trim()) {
+                        setEmoji(e.target.value.trim());
+                      }
+                    }}
+                    placeholder="https://example.com/icon.png"
+                    className="checkout-input py-2 text-xs"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Live Storefront Appearance Preview */}
+          <div className="rounded-2xl border border-dashed border-palm-300 bg-palm-50/50 p-3">
+            <span className="text-[10px] font-extrabold uppercase tracking-wider text-palm-500 block mb-1.5">
+              Live Storefront Preview
+            </span>
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-palm-600 to-palm-700 text-white shadow-soft overflow-hidden">
+                <CategoryIcon emoji={emoji} size={22} className="text-white" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <h4 className="font-display font-extrabold text-palm-900 text-sm truncate">
+                    {name.trim() || 'Category Name'}
+                  </h4>
+                  <span className={cn(
+                    'rounded-full px-2 py-0.5 text-[9px] font-extrabold uppercase tracking-wider',
+                    nationwide ? 'bg-coral-100 text-coral-800' : 'bg-palm-200 text-palm-800'
+                  )}>
+                    {nationwide ? 'Nationwide' : 'Karachi Only'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-palm-600 truncate">
+                  {tagline.trim() || 'Category tagline will appear here on storefront'}
+                </p>
+              </div>
+            </div>
           </div>
 
           <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-palm-100">

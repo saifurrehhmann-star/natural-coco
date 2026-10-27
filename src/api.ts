@@ -130,6 +130,26 @@ export async function createCategory(category: Category): Promise<Category> {
   }
 }
 
+export async function saveCategories(categories: Category[]): Promise<Category[]> {
+  try {
+    const res = await fetch(`${BASE_URL}/categories`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(categories),
+    });
+    if (!res.ok) throw new Error('Failed to save categories');
+    return await res.json();
+  } catch (err) {
+    console.warn('Backend save categories failed, saving locally:', err);
+    try {
+      localStorage.setItem('natura_categories_v2', JSON.stringify(categories));
+    } catch {
+      return categories;
+    }
+    return categories;
+  }
+}
+
 export async function updateCategory(id: string, updates: Partial<Category>): Promise<Category> {
   try {
     const res = await fetch(`${BASE_URL}/categories/${id}`, {
@@ -155,6 +175,14 @@ export async function deleteCategory(id: string): Promise<boolean> {
       if (saved) {
         const list = JSON.parse(saved);
         localStorage.setItem('natura_categories_v2', JSON.stringify(list.filter((c: Category) => c.id !== id)));
+      }
+      const savedProds = localStorage.getItem('natura_products_v2');
+      if (savedProds) {
+        const pList = JSON.parse(savedProds);
+        localStorage.setItem(
+          'natura_products_v2',
+          JSON.stringify(pList.map((p: Product) => (p.categoryId === id ? { ...p, categoryId: 'no-category' } : p)))
+        );
       }
     } catch {
       /* ignore */

@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { X, Search, ArrowUpDown } from 'lucide-react';
 import type { Category, Product } from '@/types';
 import { ProductCard } from './ProductCard';
-import { categoryIcon } from '@/utils/icons';
+import { CategoryIcon } from '@/utils/icons';
 
 interface Props {
   open: boolean;
@@ -50,8 +50,6 @@ export function CategoryProductsModal({
 
   if (!open || !category) return null;
 
-  const Icon = categoryIcon(category.emoji);
-
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center p-3 sm:p-6 bg-palm-950/60 backdrop-blur-sm animate-fadeIn">
       <div className="relative flex flex-col h-[90vh] w-full max-w-5xl rounded-3xl bg-cream-50 shadow-lift border border-palm-200 overflow-hidden">
@@ -59,7 +57,7 @@ export function CategoryProductsModal({
         <div className="flex items-center justify-between border-b border-palm-200/80 bg-white px-5 py-4">
           <div className="flex items-center gap-3">
             <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-palm-100 text-palm-700 shadow-soft">
-              <Icon size={24} />
+              <CategoryIcon emoji={category.emoji} size={24} />
             </span>
             <div>
               <div className="flex items-center gap-2">

@@ -149,6 +149,15 @@ app.post('/api/categories', (req, res) => {
   res.status(201).json(cat);
 });
 
+app.put('/api/categories', (req, res) => {
+  if (Array.isArray(req.body)) {
+    store.categories = req.body;
+    saveStore(store);
+    return res.json(store.categories);
+  }
+  res.status(400).json({ error: 'Expected array of categories' });
+});
+
 app.put('/api/categories/:id', (req, res) => {
   const id = req.params.id;
   const index = store.categories.findIndex((c) => c.id === id);
@@ -163,8 +172,17 @@ app.put('/api/categories/:id', (req, res) => {
 app.delete('/api/categories/:id', (req, res) => {
   const id = req.params.id;
   store.categories = store.categories.filter((c) => c.id !== id);
+  // Reassign any products in this deleted category to 'no-category' so they are not orphaned
+  let reassignedCount = 0;
+  store.products = store.products.map((p) => {
+    if (p.categoryId === id) {
+      reassignedCount++;
+      return { ...p, categoryId: 'no-category' };
+    }
+    return p;
+  });
   saveStore(store);
-  res.json({ success: true, id });
+  res.json({ success: true, id, reassignedCount });
 });
 
 // Products

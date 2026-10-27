@@ -22,6 +22,7 @@ import {
   createCategory,
   updateCategory,
   deleteCategory,
+  saveCategories,
   fetchCustomers,
   createCustomer,
   updateCustomer,
@@ -373,7 +374,15 @@ export function useStoreData() {
 
   const removeCategory = useCallback(async (id: string) => {
     setCategories((prev) => prev.filter((item) => item.id !== id));
+    setProducts((prev) =>
+      prev.map((p) => (p.categoryId === id ? { ...p, categoryId: 'no-category' } : p))
+    );
     await deleteCategory(id);
+  }, []);
+
+  const updateAllCategories = useCallback(async (newCategories: Category[]) => {
+    setCategories(newCategories);
+    await saveCategories(newCategories);
   }, []);
 
   // Customer CRUD
@@ -492,6 +501,7 @@ export function useStoreData() {
     addCategory,
     editCategory,
     removeCategory,
+    updateAllCategories,
     addCustomer,
     editCustomer,
     removeCustomer,
