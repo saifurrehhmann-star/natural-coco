@@ -243,7 +243,7 @@ export function OrderReceiptModal({ order, open, onClose }: Props) {
 
             <div class="footer-note">
               <p>Thank you for choosing Natura Coco! Real, fresh, hydrating goodness.</p>
-              <p style="margin-top: 4px; font-size: 10px;">For customer queries or feedback, WhatsApp +92 300 1234567</p>
+              <p style="margin-top: 4px; font-size: 10px;">For customer queries, orders or feedback, contact +92 322 8767303</p>
             </div>
           </div>
           <script>

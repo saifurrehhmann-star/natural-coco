@@ -66,7 +66,7 @@ export function Footer() {
               </li>
               <li>
                 <a href={`https://wa.me/${BRAND.whatsapp.replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-cream-200/80 transition hover:text-white">
-                  <MessageCircle size={16} className="text-cream-300" /> WhatsApp us
+                  <MessageCircle size={16} className="text-cream-300" /> WhatsApp: {BRAND.whatsapp}
                 </a>
               </li>
               <li>

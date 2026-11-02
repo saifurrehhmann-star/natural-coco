@@ -58,6 +58,7 @@ import {
   isCustomImageIcon,
   isPresetIcon,
 } from '@/utils/icons';
+import { OrderReceiptModal } from './OrderReceiptModal';
 
 interface Props {
   open: boolean;
