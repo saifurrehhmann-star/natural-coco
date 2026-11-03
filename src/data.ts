@@ -421,9 +421,10 @@ export const NAV_LINKS = [
 
 export const BRAND = {
   name: 'Natura Coco',
+  logo: '/logo.png',
   phone: '+92 322 8767303',
   whatsapp: '+92 322 8767303',
   email: 'hello@naturacoco.pk',
   about:
-    'Natura Coco was born from a simple belief: nature already makes the perfect drink. We source fresh coconuts from farms across Pakistan and cold-press natural juices daily in our Karachi kitchen — no concentrates, no preservatives, no shortcuts. Just real, fresh, hydrating goodness, delivered to your door.',
+    'Pure Nature, Real Hydration. 100% farm-fresh coconuts & natural cold-pressed juices delivered fresh and chilled to your doorstep.',
 };

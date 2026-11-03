@@ -5,8 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import nodemailer from 'nodemailer';
 import { INITIAL_PRODUCTS, INITIAL_HERO_SLIDES, INITIAL_CUSTOMERS } from './src/seedData.ts';
-import { CATEGORIES } from './src/data.ts';
-import type { OrderDetails, Category, Customer } from './src/types.ts';
+import { CATEGORIES, BRAND, PICKUP_LOCATIONS } from './src/data.ts';
+import type { OrderDetails, Category, Customer, StoreSettings } from './src/types.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -73,7 +73,19 @@ interface StoreData {
   categories: Category[];
   customers: Customer[];
   orders: OrderDetails[];
+  settings?: StoreSettings;
 }
+
+const DEFAULT_SETTINGS: StoreSettings = {
+  name: BRAND.name,
+  logo: BRAND.logo || '/logo.png',
+  phone: BRAND.phone,
+  whatsapp: BRAND.whatsapp,
+  email: BRAND.email,
+  about: BRAND.about,
+  address: PICKUP_LOCATIONS[0].address,
+  freeShippingThreshold: 3000,
+};
 
 function loadStore(): StoreData {
   try {
@@ -87,6 +99,7 @@ function loadStore(): StoreData {
         categories: CATEGORIES,
         customers: [],
         orders: [],
+        settings: DEFAULT_SETTINGS,
       };
       fs.writeFileSync(STORE_FILE, JSON.stringify(initial, null, 2), 'utf-8');
       return initial;
@@ -102,6 +115,7 @@ function loadStore(): StoreData {
       categories: parsed.categories && parsed.categories.length > 0 ? parsed.categories : CATEGORIES,
       customers: loadedCustomers,
       orders: parsed.orders || [],
+      settings: parsed.settings ? { ...DEFAULT_SETTINGS, ...parsed.settings } : DEFAULT_SETTINGS,
     };
   } catch (err) {
     console.error('Error loading store, using defaults', err);
@@ -111,6 +125,7 @@ function loadStore(): StoreData {
       categories: CATEGORIES,
       customers: [],
       orders: [],
+      settings: DEFAULT_SETTINGS,
     };
   }
 }
@@ -129,6 +144,17 @@ function saveStore(data: StoreData) {
 let store = loadStore();
 
 // --- API ROUTES ---
+
+// Store Settings
+app.get('/api/settings', (_req, res) => {
+  res.json(store.settings || DEFAULT_SETTINGS);
+});
+
+app.put('/api/settings', (req, res) => {
+  store.settings = { ...(store.settings || DEFAULT_SETTINGS), ...req.body };
+  saveStore(store);
+  res.json(store.settings);
+});
 
 // Categories
 app.get('/api/categories', (_req, res) => {

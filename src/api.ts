@@ -1,4 +1,4 @@
-import type { Product, HeroSlide, OrderDetails, OrderStage, Customer } from './types';
+import type { Product, HeroSlide, OrderDetails, OrderStage, Customer, StoreSettings } from './types';
 import { INITIAL_PRODUCTS, INITIAL_HERO_SLIDES, INITIAL_CUSTOMERS } from './seedData';
 
 const BASE_URL = '/api';
@@ -622,5 +622,53 @@ export async function verifyOtpAndResetPassword(
       /* ignore */
     }
     return { success: false, message: 'Invalid verification code or expired session.' };
+  }
+}
+
+export async function fetchStoreSettings(): Promise<StoreSettings | null> {
+  try {
+    const res = await fetch(`${BASE_URL}/settings`);
+    if (!res.ok) throw new Error('Failed to fetch settings');
+    const data = await res.json();
+    try {
+      localStorage.setItem('natura_store_settings', JSON.stringify(data));
+    } catch {
+      /* ignore */
+    }
+    return data;
+  } catch {
+    try {
+      const saved = localStorage.getItem('natura_store_settings');
+      if (saved) return JSON.parse(saved);
+    } catch {
+      /* ignore */
+    }
+    return null;
+  }
+}
+
+export async function updateStoreSettings(settings: Partial<StoreSettings>): Promise<StoreSettings> {
+  try {
+    const res = await fetch(`${BASE_URL}/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
+    if (!res.ok) throw new Error('Failed to update settings');
+    const data = await res.json();
+    try {
+      localStorage.setItem('natura_store_settings', JSON.stringify(data));
+    } catch {
+      /* ignore */
+    }
+    return data;
+  } catch (err) {
+    console.warn('Backend update failed, saving locally:', err);
+    try {
+      localStorage.setItem('natura_store_settings', JSON.stringify(settings));
+    } catch {
+      /* ignore */
+    }
+    return settings as StoreSettings;
   }
 }

@@ -167,3 +167,14 @@ export interface Customer {
   status: 'active' | 'blocked';
   notes?: string;
 }
+
+export interface StoreSettings {
+  name: string;
+  logo: string;
+  phone: string;
+  whatsapp: string;
+  email: string;
+  about: string;
+  address: string;
+  freeShippingThreshold: number;
+}

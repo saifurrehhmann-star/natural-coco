@@ -1,22 +1,30 @@
-import { Leaf, Phone, Mail, MessageCircle, Facebook, Instagram, Twitter, MapPin } from 'lucide-react';
+import { Phone, Mail, MessageCircle, Facebook, Instagram, Twitter, MapPin } from 'lucide-react';
 import { BRAND, NAV_LINKS, CITIES } from '@/data';
 
-export function Footer() {
+interface FooterProps {
+  logo?: string;
+  brandName?: string;
+  brandAbout?: string;
+}
+
+export function Footer({ logo, brandName, brandAbout }: FooterProps = {}) {
   return (
     <footer id="contact" className="bg-palm-900 text-cream-100">
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
         <div className="grid grid-cols-1 gap-10 sm:grid-cols-2 lg:grid-cols-4">
           {/* brand */}
           <div className="lg:col-span-1">
-            <div className="flex items-center gap-2">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-palm-600 text-white">
-                <Leaf size={20} />
-              </span>
+            <div className="flex items-center gap-2.5">
+              <img
+                src={logo || BRAND.logo || '/logo.png'}
+                alt="Natura Coco Logo"
+                className="h-10 w-10 shrink-0 rounded-xl object-contain drop-shadow-sm bg-white/10 p-0.5"
+              />
               <span className="font-display text-lg font-extrabold text-cream-50">
-                Natura Coco
+                {brandName || 'Natura Coco'}
               </span>
             </div>
-            <p className="mt-3 text-sm text-cream-200/80">{BRAND.about}</p>
+            <p className="mt-3 text-xs leading-relaxed text-cream-200/90 font-medium">{brandAbout || BRAND.about}</p>
             <div className="mt-4 flex gap-2">
               {[
                 { Icon: Facebook, label: 'Facebook' },

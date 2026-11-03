@@ -10,8 +10,9 @@ import type {
   OrderDetails,
   OrderStage,
   Customer,
+  StoreSettings,
 } from './types';
-import { CITIES, PICKUP_LOCATIONS, CATEGORIES } from './data';
+import { CITIES, PICKUP_LOCATIONS, CATEGORIES, BRAND } from './data';
 import { INITIAL_PRODUCTS, INITIAL_HERO_SLIDES, INITIAL_CUSTOMERS } from './seedData';
 import {
   fetchProducts,
@@ -35,7 +36,29 @@ import {
   updateOrder,
   updateOrderStatus,
   deleteOrder,
+  fetchStoreSettings,
+  updateStoreSettings,
 } from './api';
+
+export const DEFAULT_STORE_SETTINGS: StoreSettings = {
+  name: BRAND.name,
+  logo: BRAND.logo || '/logo.png',
+  phone: BRAND.phone,
+  whatsapp: BRAND.whatsapp,
+  email: BRAND.email,
+  about: BRAND.about,
+  address: PICKUP_LOCATIONS[0].address,
+  freeShippingThreshold: 3000,
+};
+
+export function updateFavicon(logoUrl?: string) {
+  if (typeof document === 'undefined' || !logoUrl) return;
+  const link = (document.querySelector("link[rel*='icon']") || document.createElement('link')) as HTMLLinkElement;
+  link.type = 'image/png';
+  link.rel = 'shortcut icon';
+  link.href = logoUrl;
+  document.getElementsByTagName('head')[0].appendChild(link);
+}
 
 const LOCATION_KEY = 'natura-location-v1';
 const CART_KEY = 'natura-cart-v1';
@@ -318,22 +341,43 @@ export function useStoreData() {
   const [customers, setCustomers] = useState<Customer[]>(INITIAL_CUSTOMERS);
   const [banners, setBanners] = useState<HeroSlide[]>(INITIAL_HERO_SLIDES);
   const [orders, setOrders] = useState<OrderDetails[]>([]);
+  const [settings, setSettings] = useState<StoreSettings>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('natura_store_settings');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            return { ...DEFAULT_STORE_SETTINGS, ...parsed };
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    return DEFAULT_STORE_SETTINGS;
+  });
   const [loading, setLoading] = useState(true);
 
   const refreshData = useCallback(async () => {
     try {
-      const [p, c, cust, b, o] = await Promise.all([
+      const [p, c, cust, b, o, set] = await Promise.all([
         fetchProducts(),
         fetchCategories(),
         fetchCustomers(),
         fetchBanners(),
         fetchOrders(),
+        fetchStoreSettings(),
       ]);
       if (p && p.length > 0) setProducts(p);
       if (c && c.length > 0) setCategories(c);
       if (Array.isArray(cust)) setCustomers(cust);
       if (b && b.length > 0) setBanners(b);
       if (Array.isArray(o)) setOrders(o);
+      if (set) {
+        setSettings((prev) => ({ ...prev, ...set }));
+        if (set.logo) updateFavicon(set.logo);
+      }
     } catch (err) {
       console.warn('Refresh error:', err);
     } finally {
@@ -487,12 +531,30 @@ export function useStoreData() {
     await deleteOrder(ref);
   }, []);
 
+  const saveSettings = useCallback(async (updates: Partial<StoreSettings>) => {
+    setSettings((prev) => {
+      const merged = { ...prev, ...updates };
+      try {
+        localStorage.setItem('natura_store_settings', JSON.stringify(merged));
+      } catch {
+        /* ignore */
+      }
+      if (updates.logo) {
+        updateFavicon(updates.logo);
+      }
+      return merged;
+    });
+    const updated = await updateStoreSettings(updates);
+    return updated;
+  }, []);
+
   return {
     products,
     categories,
     customers,
     banners,
     orders,
+    settings,
     loading,
     refreshData,
     addProduct,
@@ -510,6 +572,7 @@ export function useStoreData() {
     changeOrderStatus,
     editOrder,
     removeOrder,
+    saveSettings,
   };
 }
 

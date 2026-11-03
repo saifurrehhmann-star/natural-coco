@@ -46,6 +46,7 @@ export default function App() {
     banners,
     orders,
     customers,
+    settings,
     addProduct,
     editProduct,
     removeProduct,
@@ -61,6 +62,7 @@ export default function App() {
     changeOrderStatus,
     editOrder,
     removeOrder,
+    saveSettings,
     refreshData,
   } = useStoreData();
 
@@ -183,6 +185,8 @@ export default function App() {
       <Header
         location={location}
         cartCount={cartCount}
+        logo={settings.logo}
+        brandName={settings.name}
         isAdminLoggedIn={isAdminLoggedIn}
         customerUser={customerUser}
         onOpenLocation={() => setOverlay('location')}
@@ -256,7 +260,7 @@ export default function App() {
         <AboutSection />
       </main>
 
-      <Footer />
+      <Footer logo={settings.logo} brandName={settings.name} brandAbout={settings.about} />
 
       <FloatingCartBar
         items={items}
@@ -341,6 +345,8 @@ export default function App() {
         banners={banners}
         orders={orders}
         customers={customers}
+        settings={settings}
+        onSaveSettings={saveSettings}
         onAddProduct={addProduct}
         onEditProduct={editProduct}
         onDeleteProduct={removeProduct}

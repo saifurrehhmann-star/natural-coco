@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Menu, X, ShoppingCart, MapPin, ChevronDown, Leaf, ShieldCheck, LogIn, LogOut } from 'lucide-react';
-import { NAV_LINKS } from '@/data';
+import { Menu, X, ShoppingCart, MapPin, ChevronDown, ShieldCheck, LogIn, LogOut } from 'lucide-react';
+import { NAV_LINKS, BRAND } from '@/data';
 import type { Customer, LocationState } from '@/types';
 import { activeCityName, getEta } from '@/state';
 import { cn } from '@/utils/cn';
@@ -8,6 +8,8 @@ import { cn } from '@/utils/cn';
 interface Props {
   location: LocationState;
   cartCount: number;
+  logo?: string;
+  brandName?: string;
   isAdminLoggedIn?: boolean;
   customerUser?: Customer | null;
   onOpenLocation: () => void;
@@ -21,6 +23,8 @@ interface Props {
 export function Header({
   location,
   cartCount,
+  logo,
+  brandName,
   isAdminLoggedIn = false,
   customerUser = null,
   onOpenLocation,
@@ -51,13 +55,21 @@ export function Header({
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
         {/* logo */}
-        <a href="#home" className="flex items-center gap-2 hide-tap-highlight">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-palm-600 text-white shadow-soft">
-            <Leaf size={20} />
-          </span>
+        <a href="#home" className="group flex items-center gap-2.5 hide-tap-highlight">
+          <img
+            src={logo || BRAND.logo || '/logo.png'}
+            alt="Natura Coco Logo"
+            className="h-10 w-10 shrink-0 rounded-xl object-contain drop-shadow-sm transition-transform duration-200 group-hover:scale-105"
+          />
           <span className="flex flex-col leading-none">
             <span className="font-display text-lg font-extrabold text-palm-900">
-              Natura <span className="text-palm-600">Coco</span>
+              {brandName ? (
+                brandName
+              ) : (
+                <>
+                  Natura <span className="text-palm-600">Coco</span>
+                </>
+              )}
             </span>
             <span className="text-[10px] font-medium uppercase tracking-[0.16em] text-palm-500">
               Fresh · Natural

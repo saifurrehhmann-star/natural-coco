@@ -19,7 +19,6 @@ import {
   Sliders,
   Store,
   Menu,
-  Leaf,
   Sparkles,
   Upload,
   Image as ImageIcon,
@@ -46,6 +45,7 @@ import type {
   CityVisibility,
   CityId,
   Customer,
+  StoreSettings,
 } from '@/types';
 import { CITIES, PICKUP_LOCATIONS, BRAND } from '@/data';
 import { rs } from '@/utils/format';
@@ -68,6 +68,8 @@ interface Props {
   banners: HeroSlide[];
   orders: OrderDetails[];
   customers: Customer[];
+  settings?: StoreSettings;
+  onSaveSettings?: (settings: Partial<StoreSettings>) => Promise<StoreSettings | unknown>;
   onAddProduct: (p: Partial<Product>) => Promise<Product | unknown>;
   onEditProduct: (id: string, updates: Partial<Product>) => Promise<void | unknown>;
   onDeleteProduct: (id: string) => Promise<boolean | unknown>;
@@ -106,6 +108,8 @@ export function AdminDashboard({
   banners,
   orders,
   customers = [],
+  settings,
+  onSaveSettings,
   onAddProduct,
   onEditProduct,
   onDeleteProduct,
@@ -165,11 +169,29 @@ export function AdminDashboard({
   const [savingCategories, setSavingCategories] = useState(false);
 
   // Store Settings state
-  const [storeName, setStoreName] = useState(BRAND.name);
-  const [storePhone, setStorePhone] = useState(BRAND.phone);
-  const [storeEmail, setStoreEmail] = useState(BRAND.email);
-  const [storeAddress, setStoreAddress] = useState(PICKUP_LOCATIONS[0].address);
-  const [freeShippingThreshold, setFreeShippingThreshold] = useState('3000');
+  const [storeName, setStoreName] = useState(settings?.name || BRAND.name);
+  const [storeLogo, setStoreLogo] = useState(settings?.logo || BRAND.logo || '/logo.png');
+  const [storeAbout, setStoreAbout] = useState(settings?.about || BRAND.about);
+  const [storePhone, setStorePhone] = useState(settings?.phone || BRAND.phone);
+  const [storeEmail, setStoreEmail] = useState(settings?.email || BRAND.email);
+  const [storeAddress, setStoreAddress] = useState(settings?.address || PICKUP_LOCATIONS[0].address);
+  const [freeShippingThreshold, setFreeShippingThreshold] = useState(String(settings?.freeShippingThreshold || '3000'));
+  const [logoInputUrl, setLogoInputUrl] = useState('');
+  const [logoUploadError, setLogoUploadError] = useState<string | null>(null);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const logoFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (settings) {
+      if (settings.name) setStoreName(settings.name);
+      if (settings.logo) setStoreLogo(settings.logo);
+      if (settings.about) setStoreAbout(settings.about);
+      if (settings.phone) setStorePhone(settings.phone);
+      if (settings.email) setStoreEmail(settings.email);
+      if (settings.address) setStoreAddress(settings.address);
+      if (settings.freeShippingThreshold) setFreeShippingThreshold(String(settings.freeShippingThreshold));
+    }
+  }, [settings]);
 
   useEffect(() => {
     if (banners && banners.length > 0) {
@@ -255,8 +277,57 @@ export function AdminDashboard({
     showToast(`Banner #${slideIndex + 1} saved and live on homepage!`);
   };
 
-  const handleSaveStoreSettings = () => {
-    showToast('Store & brand settings saved successfully!');
+  const handleSaveStoreSettings = async () => {
+    setSavingSettings(true);
+    const payload: Partial<StoreSettings> = {
+      name: storeName.trim() || BRAND.name,
+      logo: storeLogo.trim() || BRAND.logo || '/logo.png',
+      about: storeAbout.trim() || BRAND.about,
+      phone: storePhone.trim() || BRAND.phone,
+      email: storeEmail.trim() || BRAND.email,
+      address: storeAddress.trim() || PICKUP_LOCATIONS[0].address,
+      freeShippingThreshold: Number(freeShippingThreshold) || 3000,
+    };
+    try {
+      if (onSaveSettings) {
+        await onSaveSettings(payload);
+      } else {
+        localStorage.setItem('natura_store_settings', JSON.stringify(payload));
+      }
+      showToast('Store settings & brand logo saved! Live on Navbar & Footer.');
+    } catch (err) {
+      console.error('Failed to save settings:', err);
+      showToast('Error saving settings');
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setLogoUploadError('Please select a valid image file (PNG, JPG, SVG, WebP)');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setLogoUploadError('Image size exceeds 2MB limit. Please choose a smaller file.');
+      return;
+    }
+    setLogoUploadError(null);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      if (dataUrl) {
+        setStoreLogo(dataUrl);
+        showToast('New icon loaded into preview! Click "Save Settings" to publish live.');
+      }
+    };
+    reader.onerror = () => {
+      setLogoUploadError('Could not read image file. Please try another.');
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   // Stats calculation
@@ -390,12 +461,14 @@ export function AdminDashboard({
       >
         <div className="flex h-16 items-center justify-between border-b border-palm-100 px-5">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-palm-600 text-white shadow-soft">
-              <Leaf size={19} />
-            </span>
+            <img
+              src={storeLogo || '/logo.png'}
+              alt="Brand Logo"
+              className="h-9 w-9 shrink-0 rounded-xl object-contain drop-shadow-sm"
+            />
             <div className="flex flex-col leading-none">
               <span className="font-display text-base font-extrabold text-palm-900">
-                Natura <span className="text-palm-600">Coco</span>
+                {storeName || 'Natura Coco'}
               </span>
               <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-palm-500">
                 Admin Portal
@@ -1848,11 +1921,134 @@ export function AdminDashboard({
                   <button
                     type="button"
                     onClick={handleSaveStoreSettings}
-                    className="btn-primary py-2 px-5 text-xs font-bold shadow-soft self-start sm:self-auto flex items-center gap-1.5 cursor-pointer"
+                    disabled={savingSettings}
+                    className="btn-primary py-2 px-5 text-xs font-bold shadow-soft self-start sm:self-auto flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
                     <Save size={14} />
-                    <span>Save Settings</span>
+                    <span>{savingSettings ? 'Saving...' : 'Save Settings'}</span>
                   </button>
+                </div>
+
+                {/* BRAND LOGO & ICON CHANGER */}
+                <div className="rounded-2xl border-2 border-palm-200 bg-gradient-to-br from-cream-50 via-white to-palm-50/50 p-4 sm:p-5 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-palm-200/70 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-palm-600 text-white shadow-soft">
+                        <ImageIcon size={16} />
+                      </div>
+                      <div>
+                        <h4 className="font-display font-extrabold text-sm text-palm-950">
+                          Store Brand Icon & Logo
+                        </h4>
+                        <p className="text-[11px] text-palm-500 font-medium">
+                          Yeh icon Navbar aur Footer dono par foran update hoga aur live save rahega.
+                        </p>
+                      </div>
+                    </div>
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 border border-emerald-300 px-3 py-1 text-[11px] font-extrabold text-emerald-800 self-start sm:self-auto">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                      Live Sync: Navbar & Footer
+                    </span>
+                  </div>
+
+                  {/* CURRENT ICON PREVIEW & QUICK ACTIONS */}
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-white p-3.5 rounded-2xl border border-palm-200 shadow-xs">
+                    {/* Visual Box with Checkered / Pattern Bg */}
+                    <div className="relative group shrink-0">
+                      <div className="flex h-20 w-20 items-center justify-center rounded-2xl border-2 border-palm-300 bg-palm-50/80 p-2 shadow-soft overflow-hidden">
+                        <img
+                          src={storeLogo || '/logo.png'}
+                          alt="Current Store Logo"
+                          className="h-full w-full object-contain drop-shadow-sm transition-transform duration-200 group-hover:scale-110"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = '/logo.png';
+                          }}
+                        />
+                      </div>
+                      <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm" title="Active Icon">
+                        <Check size={11} className="stroke-[3]" />
+                      </span>
+                    </div>
+
+                    <div className="flex-1 space-y-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-extrabold text-xs text-palm-900 font-display">
+                          Currently Active Icon
+                        </span>
+                        <span className="chip text-[10px] bg-palm-100 text-palm-800 font-mono">
+                          {storeLogo.startsWith('data:') ? 'Custom Upload (Base64)' : storeLogo.startsWith('http') ? 'External Web URL' : 'Default Asset'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-palm-600 truncate font-mono">
+                        {storeLogo.startsWith('data:') ? 'Embedded image data' : storeLogo}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        {/* File Upload Button */}
+                        <input
+                          ref={logoFileInputRef}
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                          onChange={handleLogoFileUpload}
+                          className="hidden"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => logoFileInputRef.current?.click()}
+                          className="btn-primary py-1.5 px-3.5 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Upload size={13} />
+                          <span>Upload New Icon (PNG/JPG)</span>
+                        </button>
+
+                        {/* Reset to Default */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStoreLogo('/logo.png');
+                            showToast('Reverted to default Natura Coco coconut logo!');
+                          }}
+                          className="btn-ghost py-1.5 px-3 text-xs font-bold text-palm-700 hover:text-palm-900 border border-palm-200 cursor-pointer"
+                          title="Reset to default Natura Coco coconut icon"
+                        >
+                          <RefreshCw size={12} className="text-palm-600" />
+                          <span>Reset to Default</span>
+                        </button>
+                      </div>
+                      {logoUploadError && (
+                        <p className="text-[11px] font-bold text-coral-600 mt-1">
+                          ⚠️ {logoUploadError}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* OPTIONAL: URL INPUT */}
+                  <div className="pt-1">
+                    <label className="font-bold text-palm-700 block mb-1 text-[11px]">
+                      Or Enter Image URL directly:
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="url"
+                        value={logoInputUrl}
+                        onChange={(e) => setLogoInputUrl(e.target.value)}
+                        placeholder="e.g. https://i.ibb.co/JR6sdS6h/natura-coco-favicon.png"
+                        className="checkout-input py-2 text-xs flex-1"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!logoInputUrl.trim()) return;
+                          setStoreLogo(logoInputUrl.trim());
+                          setLogoInputUrl('');
+                          showToast('Logo URL applied to preview! Click "Save Settings" to save.');
+                        }}
+                        className="rounded-xl bg-palm-700 hover:bg-palm-800 text-white px-4 py-2 text-xs font-bold transition shrink-0 cursor-pointer"
+                      >
+                        Apply URL
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
@@ -1900,6 +2096,19 @@ export function AdminDashboard({
                       onChange={(e) => setStoreAddress(e.target.value)}
                       className="checkout-input py-2.5 text-xs"
                     />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="font-bold text-palm-700 block mb-1">Brand Tagline & Footer Description</label>
+                    <textarea
+                      rows={2}
+                      value={storeAbout}
+                      onChange={(e) => setStoreAbout(e.target.value)}
+                      placeholder="Pure Nature, Real Hydration. 100% farm-fresh coconuts & natural cold-pressed juices delivered fresh and chilled to your doorstep."
+                      className="checkout-input py-2 text-xs"
+                    />
+                    <p className="mt-1 text-[10px] text-palm-500 font-medium">
+                      Yeh tagline website ke footer me brand logo ke theek neeche display hoti hai.
+                    </p>
                   </div>
                 </div>
               </div>

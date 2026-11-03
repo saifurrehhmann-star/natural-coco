@@ -483,5 +483,53 @@
       "tone": "coral"
     }
   ],
-  "orders": []
+  "categories": [
+    {
+      "id": "fresh-coconuts",
+      "name": "Fresh Coconuts",
+      "tagline": "Sourced fresh, delivered nationwide",
+      "nationwide": true,
+      "emoji": "coconut"
+    },
+    {
+      "id": "bottled-coconut-water",
+      "name": "Bottled Coconut Water",
+      "tagline": "Pure, chilled, no preservatives",
+      "nationwide": false,
+      "emoji": "bottle"
+    },
+    {
+      "id": "fresh-juices",
+      "name": "Fresh Natural Juices",
+      "tagline": "Cold-pressed daily in Karachi",
+      "nationwide": false,
+      "emoji": "juice"
+    },
+    {
+      "id": "bundles",
+      "name": "Bundles & Combos",
+      "tagline": "Save more on multi-packs",
+      "nationwide": false,
+      "emoji": "bundle"
+    },
+    {
+      "id": "extras",
+      "name": "Extras & Add-ons",
+      "tagline": "Little treats to complete your order",
+      "nationwide": false,
+      "emoji": "extra"
+    }
+  ],
+  "customers": [],
+  "orders": [],
+  "settings": {
+    "name": "Natura Coco",
+    "logo": "/logo.png",
+    "phone": "+92 322 8767303",
+    "whatsapp": "+92 322 8767303",
+    "email": "hello@naturacoco.pk",
+    "about": "Pure Nature, Real Hydration. 100% farm-fresh coconuts & natural cold-pressed juices delivered fresh and chilled to your doorstep.",
+    "address": "Shop 7, Bahadurabad Chowrangi, Karachi 74800",
+    "freeShippingThreshold": 3000
+  }
 }

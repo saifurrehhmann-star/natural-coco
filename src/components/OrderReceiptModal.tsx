@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { X, Printer, Download, Leaf, Receipt } from 'lucide-react';
+import { X, Printer, Download, Receipt } from 'lucide-react';
 import type { OrderDetails } from '@/types';
 import { rs } from '@/utils/format';
 
@@ -147,10 +147,13 @@ export function OrderReceiptModal({ order, open, onClose }: Props) {
         <body>
           <div class="slip-card">
             <div class="header">
-              <div class="brand-name">Natura Coco</div>
+              <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                <img src="${window.location.origin}/logo.png" alt="Logo" style="height: 32px; width: 32px; object-fit: contain;" />
+                <span class="brand-name">Natura Coco</span>
+              </div>
               <div class="brand-sub">Pure Coconut Water & Cold-Pressed Juices</div>
               <div style="font-size: 11px; color: #475569; margin-top: 4px;">
-                Bahadurabad Chowrangi, Karachi 74800 · Tel: +92 300 1234567
+                Bahadurabad Chowrangi, Karachi 74800 · Tel: +92 322 8767303
               </div>
               <div class="ref-badge">TAX INVOICE & DELIVERY SLIP · ${order.ref}</div>
             </div>
@@ -300,14 +303,18 @@ export function OrderReceiptModal({ order, open, onClose }: Props) {
             {/* Slip Header */}
             <div className="text-center border-b border-dashed border-palm-200 pb-5">
               <div className="flex items-center justify-center gap-2 text-palm-700 font-extrabold text-xl font-display">
-                <Leaf size={22} className="text-palm-600" />
+                <img
+                  src="/logo.png"
+                  alt="Natura Coco Logo"
+                  className="h-7 w-7 rounded-lg object-contain drop-shadow-xs"
+                />
                 <span>Natura Coco</span>
               </div>
               <p className="text-[11px] font-semibold text-palm-500 uppercase tracking-wider mt-0.5">
                 Pure Coconut Water & Natural Juices
               </p>
               <p className="text-[11px] text-palm-500 mt-1">
-                Bahadurabad Chowrangi, Karachi 74800 · Hotline: +92 300 1234567
+                Bahadurabad Chowrangi, Karachi 74800 · Hotline: +92 322 8767303
               </p>
               <div className="mt-3 inline-block rounded-full bg-palm-100 text-palm-900 px-4 py-1 text-xs font-extrabold tracking-wide border border-palm-200 font-mono">
                 TAX INVOICE SLIP #{order.ref}
