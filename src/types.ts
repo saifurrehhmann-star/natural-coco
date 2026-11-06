@@ -177,4 +177,12 @@ export interface StoreSettings {
   about: string;
   address: string;
   freeShippingThreshold: number;
+  // Tracking & Pixels
+  googleAnalyticsId?: string;
+  googleTagManagerId?: string;
+  googleSiteVerification?: string;
+  metaPixelId?: string;
+  tiktokPixelId?: string;
+  customHeadScript?: string;
+  trackingEnabled?: boolean;
 }

@@ -85,6 +85,13 @@ const DEFAULT_SETTINGS: StoreSettings = {
   about: BRAND.about,
   address: PICKUP_LOCATIONS[0].address,
   freeShippingThreshold: 3000,
+  googleAnalyticsId: '',
+  googleTagManagerId: '',
+  googleSiteVerification: '',
+  metaPixelId: '',
+  tiktokPixelId: '',
+  customHeadScript: '',
+  trackingEnabled: true,
 };
 
 function loadStore(): StoreData {

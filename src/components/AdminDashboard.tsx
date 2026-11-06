@@ -35,6 +35,7 @@ import {
   Lock,
   Mail,
   Phone,
+  Activity,
 } from 'lucide-react';
 import type {
   Product,
@@ -59,6 +60,7 @@ import {
   isPresetIcon,
 } from '@/utils/icons';
 import { OrderReceiptModal } from './OrderReceiptModal';
+import { AdminAnalyticsSettings } from './AdminAnalyticsSettings';
 
 interface Props {
   open: boolean;
@@ -88,7 +90,7 @@ interface Props {
   onLogout?: () => void;
 }
 
-type SidebarTab = 'dashboard' | 'products' | 'categories' | 'orders' | 'customers' | 'cities' | 'banners' | 'settings';
+type SidebarTab = 'dashboard' | 'products' | 'categories' | 'orders' | 'customers' | 'cities' | 'banners' | 'analytics' | 'settings';
 
 const PRESET_IMAGES = [
   { label: 'Green Tender Coconuts', url: 'https://images.pexels.com/photos/16005627/pexels-photo-16005627.jpeg?auto=compress&cs=tinysrgb&h=650&w=940' },
@@ -181,6 +183,21 @@ export function AdminDashboard({
   const [savingSettings, setSavingSettings] = useState(false);
   const logoFileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Analytics & Tracking Pixels state
+  const [googleAnalyticsId, setGoogleAnalyticsId] = useState(settings?.googleAnalyticsId || '');
+  const [googleTagManagerId, setGoogleTagManagerId] = useState(settings?.googleTagManagerId || '');
+  const [googleSiteVerification, setGoogleSiteVerification] = useState(settings?.googleSiteVerification || '');
+  const [metaPixelId, setMetaPixelId] = useState(settings?.metaPixelId || '');
+  const [tiktokPixelId, setTiktokPixelId] = useState(settings?.tiktokPixelId || '');
+  const [customHeadScript, setCustomHeadScript] = useState(settings?.customHeadScript || '');
+  const [trackingEnabled, setTrackingEnabled] = useState(settings?.trackingEnabled !== false);
+  const [testingTracking, setTestingTracking] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    ga?: { active: boolean; id: string };
+    meta?: { active: boolean; id: string };
+    siteKit?: { active: boolean; token: string };
+  } | null>(null);
+
   useEffect(() => {
     if (settings) {
       if (settings.name) setStoreName(settings.name);
@@ -190,6 +207,13 @@ export function AdminDashboard({
       if (settings.email) setStoreEmail(settings.email);
       if (settings.address) setStoreAddress(settings.address);
       if (settings.freeShippingThreshold) setFreeShippingThreshold(String(settings.freeShippingThreshold));
+      if (settings.googleAnalyticsId !== undefined) setGoogleAnalyticsId(settings.googleAnalyticsId);
+      if (settings.googleTagManagerId !== undefined) setGoogleTagManagerId(settings.googleTagManagerId);
+      if (settings.googleSiteVerification !== undefined) setGoogleSiteVerification(settings.googleSiteVerification);
+      if (settings.metaPixelId !== undefined) setMetaPixelId(settings.metaPixelId);
+      if (settings.tiktokPixelId !== undefined) setTiktokPixelId(settings.tiktokPixelId);
+      if (settings.customHeadScript !== undefined) setCustomHeadScript(settings.customHeadScript);
+      if (settings.trackingEnabled !== undefined) setTrackingEnabled(settings.trackingEnabled);
     }
   }, [settings]);
 
@@ -287,6 +311,13 @@ export function AdminDashboard({
       email: storeEmail.trim() || BRAND.email,
       address: storeAddress.trim() || PICKUP_LOCATIONS[0].address,
       freeShippingThreshold: Number(freeShippingThreshold) || 3000,
+      googleAnalyticsId: googleAnalyticsId.trim(),
+      googleTagManagerId: googleTagManagerId.trim(),
+      googleSiteVerification: googleSiteVerification.trim(),
+      metaPixelId: metaPixelId.trim(),
+      tiktokPixelId: tiktokPixelId.trim(),
+      customHeadScript: customHeadScript.trim(),
+      trackingEnabled,
     };
     try {
       if (onSaveSettings) {
@@ -294,13 +325,30 @@ export function AdminDashboard({
       } else {
         localStorage.setItem('natura_store_settings', JSON.stringify(payload));
       }
-      showToast('Store settings & brand logo saved! Live on Navbar & Footer.');
+      showToast('Settings & tracking configuration saved successfully!');
     } catch (err) {
       console.error('Failed to save settings:', err);
       showToast('Error saving settings');
     } finally {
       setSavingSettings(false);
     }
+  };
+
+  const handleTestTracking = () => {
+    setTestingTracking(true);
+    setTimeout(() => {
+      const gaActive = typeof window !== 'undefined' && (!!window.gtag || !!document.getElementById('ga4-tracking-script'));
+      const metaActive = typeof window !== 'undefined' && (!!window.fbq || !!document.getElementById('fb-pixel-script'));
+      const metaTag = typeof document !== 'undefined' ? document.querySelector('meta[name="google-site-verification"]') : null;
+      const siteKitActive = !!metaTag && !!metaTag.getAttribute('content');
+
+      setTestResult({
+        ga: { active: gaActive, id: googleAnalyticsId.trim() },
+        meta: { active: metaActive, id: metaPixelId.trim() },
+        siteKit: { active: siteKitActive, token: metaTag?.getAttribute('content') || '' },
+      });
+      setTestingTracking(false);
+    }, 500);
   };
 
   const handleLogoFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -561,6 +609,17 @@ export function AdminDashboard({
           />
 
           <SidebarItem
+            active={activeTab === 'analytics'}
+            onClick={() => {
+              setActiveTab('analytics');
+              setMobileSidebarOpen(false);
+            }}
+            icon={<Activity size={18} />}
+            label="Analytics & Pixels"
+            badge={googleAnalyticsId || metaPixelId ? 'Connected' : undefined}
+          />
+
+          <SidebarItem
             active={activeTab === 'settings'}
             onClick={() => {
               setActiveTab('settings');
@@ -620,6 +679,8 @@ export function AdminDashboard({
               <span className="font-extrabold text-palm-900 capitalize font-display">
                 {activeTab === 'banners'
                   ? 'Hero Banners'
+                  : activeTab === 'analytics'
+                  ? 'Analytics & Tracking Pixels'
                   : activeTab === 'settings'
                   ? 'Website Settings'
                   : activeTab === 'categories'
@@ -1016,7 +1077,7 @@ export function AdminDashboard({
                           </span>
                         </div>
                         <p className="text-xs text-amber-800 mt-0.5">
-                          Yeh products un categories se hain jo delete ho chuki hain. Aap inhein neechay kisi bhi active category mein assign/move kar saktay hain:
+                          These products belong to categories that were deleted. You can reassign or move them to any active category below:
                         </p>
                       </div>
                     </div>
@@ -1941,7 +2002,7 @@ export function AdminDashboard({
                           Store Brand Icon & Logo
                         </h4>
                         <p className="text-[11px] text-palm-500 font-medium">
-                          Yeh icon Navbar aur Footer dono par foran update hoga aur live save rahega.
+                          This icon updates instantly across both the Navbar and Footer and is saved permanently.
                         </p>
                       </div>
                     </div>
@@ -2107,10 +2168,40 @@ export function AdminDashboard({
                       className="checkout-input py-2 text-xs"
                     />
                     <p className="mt-1 text-[10px] text-palm-500 font-medium">
-                      Yeh tagline website ke footer me brand logo ke theek neeche display hoti hai.
+                      This tagline appears directly beneath the brand logo in the website footer.
                     </p>
                   </div>
                 </div>
+              </div>
+
+              {/* SECTION: ANALYTICS & TRACKING JUMP CARD */}
+              <div className="rounded-3xl border border-palm-200/80 bg-gradient-to-r from-palm-900 via-palm-800 to-palm-950 p-6 text-white shadow-card flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-3.5">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/10 backdrop-blur border border-white/20 text-coral-400">
+                    <Activity size={22} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-display text-base font-extrabold text-white">
+                        Analytics & Tracking Pixels
+                      </h3>
+                      <span className="rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 px-2.5 py-0.5 text-[10px] font-extrabold">
+                        {googleAnalyticsId || metaPixelId ? 'Connected' : 'Setup Ready'}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-palm-200 max-w-xl">
+                      Connect Google Analytics 4 (GA4), Google Site Kit / Search Console verification, and Meta (Facebook) Pixel to track live traffic, add-to-carts, and completed orders.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('analytics')}
+                  className="btn-primary py-2.5 px-5 text-xs font-bold whitespace-nowrap self-start sm:self-auto cursor-pointer flex items-center gap-2 shadow-lift"
+                >
+                  <Activity size={15} />
+                  <span>Configure Analytics & Pixels</span>
+                </button>
               </div>
 
               {/* SECTION: RESET FACTORY DATA */}
@@ -2135,6 +2226,33 @@ export function AdminDashboard({
                 </button>
               </div>
             </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* TAB: ANALYTICS & TRACKING PIXELS                          */}
+          {/* ========================================================= */}
+          {activeTab === 'analytics' && (
+            <AdminAnalyticsSettings
+              googleAnalyticsId={googleAnalyticsId}
+              setGoogleAnalyticsId={setGoogleAnalyticsId}
+              googleTagManagerId={googleTagManagerId}
+              setGoogleTagManagerId={setGoogleTagManagerId}
+              googleSiteVerification={googleSiteVerification}
+              setGoogleSiteVerification={setGoogleSiteVerification}
+              metaPixelId={metaPixelId}
+              setMetaPixelId={setMetaPixelId}
+              tiktokPixelId={tiktokPixelId}
+              setTiktokPixelId={setTiktokPixelId}
+              customHeadScript={customHeadScript}
+              setCustomHeadScript={setCustomHeadScript}
+              trackingEnabled={trackingEnabled}
+              setTrackingEnabled={setTrackingEnabled}
+              onSave={handleSaveStoreSettings}
+              saving={savingSettings}
+              onTest={handleTestTracking}
+              testing={testingTracking}
+              testResult={testResult}
+            />
           )}
         </main>
       </div>
@@ -3569,7 +3687,7 @@ function CategoryEditorModal({
               <div className="rounded-2xl border border-palm-200 bg-cream-50/60 p-3 space-y-3">
                 <div>
                   <label className="text-[11px] font-bold text-palm-700 block mb-1">
-                    Apni marzi ka koi bhi Emoji ya symbol type/paste karein:
+                    Type or paste any custom emoji or symbol of your choice:
                   </label>
                   <div className="flex items-center gap-2">
                     <input

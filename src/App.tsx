@@ -11,6 +11,13 @@ import {
   useCustomerAuth,
   isProductVisibleInLocation,
 } from '@/state';
+import {
+  initializeTracking,
+  trackPageView,
+  trackViewProduct,
+  trackAddToCart,
+  trackPurchase,
+} from '@/utils/analytics';
 
 import { Header } from '@/components/Header';
 import { Hero } from '@/components/Hero';
@@ -131,9 +138,16 @@ export default function App() {
     })).filter((group) => group.products.length > 0);
   }, [categories, products, location]);
 
+  // Initialize tracking pixels & Google Analytics
+  useEffect(() => {
+    initializeTracking(settings);
+    trackPageView();
+  }, [settings]);
+
   const openProduct = useCallback((p: Product) => {
     setActiveProduct(p);
     setOverlay('product');
+    trackViewProduct(p);
   }, []);
 
   const quickAdd = useCallback(
@@ -143,6 +157,7 @@ export default function App() {
         return;
       }
       addItem(p, [], 1);
+      trackAddToCart(p, 1, p.price);
       setOverlay('cart');
     },
     [addItem, openProduct]
@@ -151,6 +166,8 @@ export default function App() {
   const handleAddFromModal = useCallback(
     (product: Product, variations: CartVariation[], quantity: number) => {
       addItem(product, variations, quantity);
+      const delta = variations.reduce((sum, v) => sum + v.priceDelta, 0);
+      trackAddToCart(product, quantity, product.price + delta);
       setOverlay('cart');
     },
     [addItem]
@@ -160,6 +177,7 @@ export default function App() {
     (o: OrderDetails) => {
       recordOrder(o);
       setOrder(o);
+      trackPurchase(o);
       clearCart();
       setOverlay('confirmation');
     },

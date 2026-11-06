@@ -530,6 +530,8 @@
     "email": "hello@naturacoco.pk",
     "about": "Pure Nature, Real Hydration. 100% farm-fresh coconuts & natural cold-pressed juices delivered fresh and chilled to your doorstep.",
     "address": "Shop 7, Bahadurabad Chowrangi, Karachi 74800",
-    "freeShippingThreshold": 3000
+    "freeShippingThreshold": 3000,
+    "googleAnalyticsId": "G-284MR5F1DP",
+    "trackingEnabled": true
   }
 }

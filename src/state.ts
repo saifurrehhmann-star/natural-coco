@@ -49,6 +49,13 @@ export const DEFAULT_STORE_SETTINGS: StoreSettings = {
   about: BRAND.about,
   address: PICKUP_LOCATIONS[0].address,
   freeShippingThreshold: 3000,
+  googleAnalyticsId: '',
+  googleTagManagerId: '',
+  googleSiteVerification: '',
+  metaPixelId: '',
+  tiktokPixelId: '',
+  customHeadScript: '',
+  trackingEnabled: true,
 };
 
 export function updateFavicon(logoUrl?: string) {
